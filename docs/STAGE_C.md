@@ -41,6 +41,8 @@ The earlier 64 ms (8-frame) offline measurement was fast on a lightly loaded dev
 
 On that host, 16 frames (128 ms) reduced RTF to 0.92 with 119.97 ms p95; 24 frames (192 ms) reduced it to 0.70 with 141.18 ms p95. The latter's estimated model core wait is about 357 ms before CoreAudio, BlackHole and Doubao, so it might breach the 500 ms end-to-end criterion. These are development-host results, not Mac B compute results. The live command intentionally requires `--frames-per-chunk`; benchmark Mac B before selecting 16 or 24.
 
+An offline 125-second soak of the hardest Mac B-derived condition (quiet target at -12 dB), with 24 frames and complete 48→16→48 kHz conversion, produced exactly matching input/output lengths, finite audio, RTF 0.670, processing-call p95 136.10 ms and max 226.34 ms. This covers repeated state and resampling behavior only; it does not replace a physical 30-minute device stream.
+
 ## Reproducible environment
 
 The isolated environment is stored with the artifact checkout, not in the source tree. To rebuild it:

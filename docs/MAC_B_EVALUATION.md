@@ -30,6 +30,8 @@ For the quiet -12 dB mixture, the explicit-state 8-frame path was numerically eq
 
 It does not prove Mac B's live performance. Evaluation ran on the development Mac after the recordings were transferred. Under current desktop load on that host, complete 48→16→48 kHz simulation measured RTF 1.42 for 8 frames, 0.92 for 16 frames, and 0.70 for 24 frames. Mac B must benchmark locally before selecting the real-time chunk size. The bridge has no silent chunk default.
 
+An additional 125-second continuous offline soak of the quiet -12 dB condition at 24 frames retained exact input/output duration and finite output, with RTF 0.670, processing-call p95 136.10 ms, and max 226.34 ms. This is useful state/resampling evidence only, not a physical-stream substitute.
+
 ## Status
 
 Mac B + wired headset offline effect: `PASS`.

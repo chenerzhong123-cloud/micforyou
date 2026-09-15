@@ -26,6 +26,12 @@ def main() -> None:
     parser.add_argument("--enrollment", type=Path, required=True)
     parser.add_argument("--frames-per-chunk", type=int, default=8)
     parser.add_argument("--audio-block", type=int, default=480)
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="repeat the input contiguously for an offline soak; must be positive",
+    )
     parser.add_argument("--output-wav", type=Path, required=True)
     parser.add_argument("--output-json", type=Path, required=True)
     args = parser.parse_args()
@@ -36,7 +42,10 @@ def main() -> None:
     extractor = wesep.load_model_local(str(args.model_dir))
     model = extractor.model.eval()
     enrollment = load_audio(args.enrollment, extractor.resample_rate)
+    if args.repeat < 1:
+        raise ValueError("--repeat must be positive")
     source = load_audio(args.mixture, 48_000).reshape(-1).numpy()
+    source = np.tile(source, args.repeat)
     with torch.inference_mode():
         conditioning = precompute_conditioning(model, enrollment)
     stream = CausalTseStream(model, conditioning, args.frames_per_chunk, torch.device("cpu"))
@@ -72,6 +81,7 @@ def main() -> None:
     result = {
         "model_sha256": sha256(args.model_dir / "avg_model.pt"),
         "input_samples_48k": len(source),
+        "input_repetitions": args.repeat,
         "output_samples_48k": len(output),
         "duration_delta_ms": (len(output) - len(source)) / 48,
         "processing_seconds": processing_seconds,
