@@ -74,7 +74,7 @@ The same 8-frame configuration measured RTF 1.42 earlier the same day under heav
 | 16 | 120 s | COMPLETED | 330/341/487 | 152.5 | 0.413 | length exact, no fault |
 | 24 | 120 s | COMPLETED | 380/381/550 | 96.3 | 0.377 | length exact, no fault |
 
-These latencies sit well above the compute-only core estimate (e.g. 16f: 341 ms p95 vs 198 ms estimate) because queue dwell and burst emission only exist under real-time pacing. 24 frames leaves ≤ 70 ms for all external stages and is expected to breach the 500 ms end-to-end AT-07 target; 8/16 frames fit with margin on this host at this moment. In one earlier 12 s probe (16f) the output ring reached its 500 ms bound during end-of-stream drain and latched fault-silence — transient burst catch-up can overflow the ring even when average RTF < 1, which is why the paced check is required before live use.
+These latencies sit well above the compute-only core estimate (e.g. 16f: 341 ms p95 vs 198 ms estimate) because queue dwell and burst emission only exist under real-time pacing. 24 frames leaves ≤ 70 ms for all external stages and is expected to breach the 500 ms end-to-end AT-07 target; 8/16 frames leave more internal headroom on this host, but neither value proves AT-07 because CoreAudio, BlackHole → Doubao and Doubao time are unmeasured. In one earlier 12 s probe (16f) the output ring reached its 500 ms bound during end-of-stream drain and latched fault-silence — transient burst catch-up can overflow the ring even when average RTF < 1, which is why the paced check is required before live use.
 
 ### BlackHole auto-loopback regression
 

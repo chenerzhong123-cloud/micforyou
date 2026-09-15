@@ -48,7 +48,7 @@ benchmark 看不到实时队列动态。Mac A 实测：16-frame benchmark RTF 0.
   --result /Users/deuce/claudeproject/codexworks/micforyou/runs/latency.json
 ```
 
-判断标准：`bridge_latency.latency_ms_p95` 加上外部链路（见下）仍应 ≤ 500 ms；出现 `status: FAULT`、持续 underrun 或 p95 接近 500 ms 时，换更大的帧数重测；全部不行则本机当前状态不适合实时启用。
+判断标准：若 `bridge_latency.latency_ms_p95` 已接近 500 ms，MicForYou 内部路径本身就没有足够余量，应换更小的候选重测或拒绝启用。出现 `status: FAULT` 或持续 underrun 时，该候选也不可用。CoreAudio、BlackHole → 豆包和豆包本身的时间尚未自动测量，因此这个工具只能筛掉明显不可能达标的配置；它**不能**单独判定 SPEC AT-07 的端到端 p95≤500 ms 已通过。
 
 该工具加 `--duration 1800` 即 30 分钟实时配速模拟 soak（见 `docs/STAGE_C.md`）。
 
@@ -59,7 +59,7 @@ benchmark 看不到实时队列动态。Mac A 实测：16-frame benchmark RTF 0.
 
 需要人工的操作（一次性集中完成，不要反复打断用户）：
 
-1. 用惯用方式对豆包说短句，手动记录"说完 → 文字出现"的秒数（与配速 p95 相减即豆包侧体验延迟）。
+1. 用惯用方式对豆包说短句，手动记录“说完 → 文字出现”的秒数，作为单独的用户体验指标。不要从该值减去 `bridge_latency`：二者的起点不同，且前者还包含豆包的断句、静音判定、解码和 UI 行为，差值没有可解释性。
 2. 若要验证 BlackHole 回采，重启后跑 `uv run micforyou probe-loopback .../route-test.wav`，正常应得到接近 2026-09-13 基线（256 ms、gain≈1.0）。
 
 ## 何时拒绝启用
