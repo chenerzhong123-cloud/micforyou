@@ -18,6 +18,7 @@ from .audio import (
     resolve_device,
 )
 from .evaluation import create_mixtures, score_output
+from .recommendation import BenchmarkCandidate, recommend
 
 
 DEFAULT_WORK_DIR = Path("/Users/deuce/claudeproject/codexworks/micforyou")
@@ -118,6 +119,28 @@ def command_record(args: argparse.Namespace) -> None:
     )
 
 
+def command_recommend_frames(args: argparse.Namespace) -> None:
+    payload = json.loads(args.benchmark.read_text(encoding="utf-8"))
+    if payload.get("schema") != "micforyou-benchmark-1":
+        raise ValueError(f"{args.benchmark} is not a micforyou-benchmark-1 result")
+    candidates = [
+        BenchmarkCandidate(
+            frames_per_chunk=item["frames_per_chunk"],
+            rtf=item["processing_rtf"],
+            model_call_ms_p95=item["model_call_ms_p95"] or 0.0,
+            model_call_ms_p50=item["model_call_ms_p50"],
+            model_call_ms_max=item["model_call_ms_max"],
+            model_calls=item["model_calls"],
+            input_samples=item["input_samples"],
+            output_samples=item["output_samples"],
+            nonfinite_samples=max(item["nonfinite_samples"], 0),
+            error=item["error"],
+        )
+        for item in payload["candidates"]
+    ]
+    write_json(recommend(candidates).to_dict(), args.result)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="micforyou")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -177,6 +200,14 @@ def build_parser() -> argparse.ArgumentParser:
     record.add_argument("--countdown", type=float, default=3.0)
     record.add_argument("--result", type=Path)
     record.set_defaults(func=command_record)
+
+    recommend_parser = subparsers.add_parser(
+        "recommend-frames",
+        help="grade a benchmark JSON into fast/balanced/conservative/unsupported",
+    )
+    recommend_parser.add_argument("--benchmark", type=Path, required=True)
+    recommend_parser.add_argument("--result", type=Path)
+    recommend_parser.set_defaults(func=command_recommend_frames)
 
     bridge = subparsers.add_parser("passthrough", help="bridge a physical mic to BlackHole")
     bridge.add_argument("--input-device", required=True)

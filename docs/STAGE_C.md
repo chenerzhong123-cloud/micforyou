@@ -43,6 +43,57 @@ On that host, 16 frames (128 ms) reduced RTF to 0.92 with 119.97 ms p95; 24 fram
 
 An offline 125-second soak of the hardest Mac B-derived condition (quiet target at -12 dB), with 24 frames and complete 48→16→48 kHz conversion, produced exactly matching input/output lengths, finite audio, RTF 0.670, processing-call p95 136.10 ms and max 226.34 ms. This covers repeated state and resampling behavior only; it does not replace a physical 30-minute device stream.
 
+## Mac A performance grading, latency, and stability (2026-09-15)
+
+The Mac A handoff deliverables are implemented and run on this host. Reports live under `/Users/deuce/claudeproject/codexworks/micforyou/runs/20260915-*.json`; nothing below extends to Mac B or unknown hardware.
+
+### Tooling
+
+- `experiments/benchmark_real_tse.py`: repeatable full-path benchmark (48 kHz → 16 kHz → TSE → 16 kHz → 48 kHz) over deterministic synthetic audio with no user voice, machine-readable JSON, per-candidate RTF/call percentiles/integrity checks.
+- `src/micforyou/recommendation.py` + `micforyou recommend-frames`: explainable grading into `fast` / `balanced` / `conservative` / `unsupported` with per-candidate reasons and thresholds. It only advises; the live bridge still requires an explicit `--frames-per-chunk`.
+- `experiments/measure_bridge_latency.py`: wall-clock-paced simulated duplex callback driving the exact live DSP chain through the shared `BridgeEngine`; `LatencyLedger` audits arrival→write timestamps by audio position. Synthetic pulses only. Doubao and CoreAudio externals are explicitly listed as not measured.
+- `src/micforyou/bridging.py`: the queue/ring/fault core extracted from the live script; unit tests replay input overflow, output overflow, and inference exceptions and assert fault-silence with zero raw passthrough (30 tests total, previously 6).
+- The refactor also fixed two live-bridge defects found by the simulated runs: `torch.inference_mode()` is thread-local so the worker thread must enter it itself (the old worker would have raised on the first chunk), and the latency ledger must map output by ring audio position, not the output slot that runs ahead after underruns.
+
+### Benchmark (AC power, loadavg ≈ 3.5, `20260915-benchmark-frames.json`)
+
+| frames | RTF | call p50/p95/max ms | calls | length | recommendation |
+| ---: | ---: | ---: | ---: | --- | --- |
+| 8 | 0.507 | 32.0/33.5/56.5 | 938 | exact | **fast (chosen), core est. 121.5 ms** |
+| 16 | 0.372 | 45.8/51.9/151.4 | 469 | exact | fast tier |
+| 24 | 0.317 | 59.9/61.4/74.2 | 313 | exact | fast tier |
+| 32 | 0.293 | 73.3/79.0/108.9 | 235 | exact | conservative tier (core est. 359 ms > 350 budget) |
+
+The same 8-frame configuration measured RTF 1.42 earlier the same day under heavier desktop activity — the spread is the reason a pre-launch benchmark is mandatory and no silent default exists.
+
+### Paced bridge-internal latency (`20260915-latency-8f/16f/24f.json`)
+
+| frames | duration | status | p50/p95/max ms | underrun ms | RTF | notes |
+| ---: | ---: | --- | ---: | ---: | ---: | --- |
+| 8 | 30 s | COMPLETED | 200/202/291 | 58.8 | 0.532 | length exact, no fault |
+| 16 | 120 s | COMPLETED | 330/341/487 | 152.5 | 0.413 | length exact, no fault |
+| 24 | 120 s | COMPLETED | 380/381/550 | 96.3 | 0.377 | length exact, no fault |
+
+These latencies sit well above the compute-only core estimate (e.g. 16f: 341 ms p95 vs 198 ms estimate) because queue dwell and burst emission only exist under real-time pacing. 24 frames leaves ≤ 70 ms for all external stages and is expected to breach the 500 ms end-to-end AT-07 target; 8/16 frames fit with margin on this host at this moment. In one earlier 12 s probe (16f) the output ring reached its 500 ms bound during end-of-stream drain and latched fault-silence — transient burst catch-up can overflow the ring even when average RTF < 1, which is why the paced check is required before live use.
+
+### BlackHole auto-loopback regression
+
+`measure_bridge_latency.py --blackhole-roundtrip` (and the Stage A probe itself) currently captures pure silence from BlackHole on Mac A, while Stage A measured a clean 256 ms loop with gain 0.9999 on 2026-09-13 and Doubao still received BlackHole audio on 2026-09-15. The tool now reports this explicitly instead of emitting a bogus lag. Per the handoff this is treated as an environmental item for manual re-verification (reboot / Audio MIDI Setup), not something to work around.
+
+### 30-minute simulated soak (16 frames)
+
+`20260915-soak-16f-30min.json`: wall-clock-paced over the complete path with the live bounded queues, clearly labeled `simulated: true` — it opens no audio devices and does not replace the physical 30-minute AT-09 run.
+
+- Status `COMPLETED`, 1800.6 s wall for 1800.0 s audio; output length exactly matches input; zero non-finite samples; no fault and no errors.
+- Bridge-internal latency p50/p95/max 379.8/382.2/596.5 ms over 180,006 blocks; per-5-minute segment p95 stable at 361→382 ms (settles after the first segment).
+- Per-segment model RTF 0.415–0.424 across all six segments — no drift or degradation; input queue peaked at 17 blocks (170 ms transient) and the ring at 371.7 ms, both below their 500 ms bounds; total underruns 151.7 ms, concentrated in startup settling.
+- RSS declined from an early warm-up peak with no upward trend (no leak); pacing woke a median 3.3 ms late (Python timer granularity, reported per run).
+- All 900 synthetic pulses were captured; mean alignment offset 0.03 ms (per-pulse max 99.96 ms reflects TSE smearing of broadband clicks, not position drift).
+
+### Stage status after this work
+
+Stage C remains `PARTIAL PASS`. AT-07 (physical end-to-end latency), AT-08 (Doubao stop-capture tail), AT-09 (physical 30-minute live run), and AT-10 (physical fault drills with the real headset) are still `NOT RUN`; the simulated tools above provide engineering evidence only, and no performance claim is transferred to Mac B or other user hardware. See `docs/PERFORMANCE_GUIDE.md` for the per-device pre-launch procedure.
+
 ## Reproducible environment
 
 The isolated environment is stored with the artifact checkout, not in the source tree. To rebuild it:
