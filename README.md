@@ -24,4 +24,4 @@ Select `BlackHole 2ch` as Doubao's input if Doubao exposes a device selector. Ot
 
 Every actual run writes a JSON record under `/Users/deuce/claudeproject/codexworks/micforyou/runs/`. Real enrollment and test recordings must not be committed.
 
-See `docs/STAGE_A.md` for routing acceptance and recovery, `docs/STAGE_B.md` for model evidence, `docs/STAGE_C.md` for the causal bridge and latency evidence, and `docs/HUMAN_RECORDING.md` for the single concentrated human recording step.
+See `docs/STAGE_A.md` for routing acceptance and recovery, `docs/STAGE_B.md` for model evidence, `docs/STAGE_C.md` for the causal bridge and latency evidence, `docs/DOUBAO_AB.md` for the transcription A/B protocol, and `docs/HUMAN_RECORDING.md` for the single concentrated human recording step.
