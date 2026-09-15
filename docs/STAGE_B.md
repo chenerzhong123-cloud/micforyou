@@ -48,4 +48,4 @@ REAL-TSE source commit `2a540977a348fbaa92e623210505430e2cec608d`; causal TFMap 
 
 ## Remaining gate
 
-Capture separate 45–60 s enrollment, normal test, and quiet test recordings with the everyday headset. Then run the same model on Chinese speech and do audio plus Doubao A/B acceptance. Until then Stage B is not fully passed and no claim of daily usability is allowed.
+The supplied Mac B wired-headset recordings now have both controlled objective scores and a current-Mac BlackHole → Doubao transcription A/B result. The latter shows material target recovery at quiet -12 dB and normal -12 dB, while target absence emitted no text; it also shows material wording substitutions. A genuine noisy-workplace recording and a live Mac B device stream remain untested. Until those are complete, Stage B is not fully passed and no claim of daily usability is allowed. See [Doubao A/B](DOUBAO_AB.md).

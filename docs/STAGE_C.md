@@ -1,6 +1,6 @@
 # Stage C — causal core and real-time bridge
 
-Status: `PARTIAL PASS`. The causal/stateful processing core passes equivalence and CPU timing checks. Physical-headset → model → BlackHole, end-to-end p95, Doubao boundaries, fault injection, and 30-minute stability remain `NOT RUN`.
+Status: `PARTIAL PASS`. The causal/stateful processing core passes equivalence and CPU timing checks. Offline Mac B-derived audio can traverse BlackHole → Doubao with material target recovery and no observed target-absent text; this is not a physical-headset live run. Physical-headset → model → BlackHole, end-to-end p95, fault injection, and 30-minute stability remain `NOT RUN`.
 
 ## Why the model is actually streamable
 
