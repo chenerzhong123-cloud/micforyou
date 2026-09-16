@@ -106,6 +106,23 @@ First physical-device runs of the bridge (`runs/mac-a-device-120s-20260916.json`
 
 Stage C remains `PARTIAL PASS`; AT-07 through AT-10 stay `NOT RUN` until that session and the physical fault drills complete.
 
+### Mac A live speech acceptance session (2026-09-16 evening)
+
+User-participation session per `docs/MAC_A_LIVE_SESSION.md`: private enrollment recorded (45 s, peak 0.508, no clipping), Doubao pointed at BlackHole 2ch, built-in microphone as the physical input. Microphone access for the agent host app was unavailable (ZCode feeds pure zeros under TCC denial; `tccutil reset` did not restore the prompt), so all audio commands were driven through Terminal.app, which the user authorized once.
+
+**Live 120-second dictation runs (`mac-a-live-120s-20260916.json`):**
+
+- 8 frames: `FAULT` — under the user's normal desktop activity the per-call time doubles (~68 ms vs 33 ms benchmark; WindowServer alone holds ~38% CPU), RTF exceeds 1, both queues overflow, 114.6 s of the 120 s output is silence. Fault-silence held: no raw passthrough, no device switch. This is live confirmation of why 8 frames cannot be a default.
+- 16 frames: `STOPPED` clean — 943 calls p50/p95 87.5/95.3 ms, bridge-internal latency p50/p95/max 340.0/340.2/340.5 ms, ring peak 220 ms, no stream errors. The user's dictated speech traversed mic → TSE → BlackHole → Doubao successfully.
+
+**Two 30-minute attempts both wedged mid-run (`stuck-bridge-28193-sample.txt`, `mac-a-live-30min-20260916-stall2.txt`):** CoreAudio's HAL stopped scheduling the bridge's IO context (IO thread parked in `semaphore_wait_signal_trap`, callbacks stopped, worker idle, memory compressed) a few minutes in, each time shortly after several Doubao push-to-talk toggles on BlackHole. The user observed dictation working early and then going silent; the wedge was invisible to the bridge itself (no fault, no exit). A `coreaudiod` restart between attempts did not prevent recurrence, and did not repair the dead BlackHole loopback capture either (`mac-a-loopback-20260916-postrestart.json`, still gain 0.0).
+
+**10-minute isolation probe (`mac-a-isolation-10min-20260916.json`):** with the user not touching Doubao at all, the stream stayed healthy for the full 603.8 s at ~70–75% CPU — no wedge, supporting the push-to-talk trigger hypothesis (not conclusive). However the run ended `FAULT` near/after the drain: model p95 rose to 103.0 ms under concurrent desktop load, the output ring reached its 491 ms bound, 2 input overflows were reported, and underruns totaled 13.7 s. Realistic-load margin at 16 frames is therefore thinner than the clean 120 s run suggests; 24 frames trades compute margin for higher latency.
+
+**Doubao acceptance through the chain (four dictation rounds, exact transcripts recorded):** phrase 1 intact 4/4; phrase 2 intact 3/4 (one round lost the final 「尾。」 and merged with the next phrase); phrase 3 intact 1/4 (two rounds lost trailing characters — 「截断。」 and 「截断尾。」— and one early round changed 录音→录制). All successful dictations went through the full bridge (Doubao was on BlackHole the whole time), so the intermittent tail loss is through-chain; no physical-mic Doubao baseline was collected in this session to separate bridge-induced gaps from Doubao's own endpointing, and no stopwatch timings were systematically captured.
+
+**Acceptance status after the session:** AT-07 `NOT RUN` as an end-to-end pass (bridge-internal p95 340 ms recorded; external path unmeasurable while BlackHole loopback capture is dead; user timings not collected). AT-08 has evidence of intermittent through-chain tail loss with no baseline comparison — inconclusive, needs a physical-mic baseline round. AT-09 `FAIL` for now: two environmental CoreAudio wedges plus a load-induced queue-overflow fault; a production bridge needs an IO-liveness watchdog with stream reopen before the 30-minute criterion can be retried. AT-10 partially evidenced: every fault (8-frame overload, queue overflow) produced silence with zero raw passthrough and no automatic device switch; physical unplug drills remain untested. Stage C stays `PARTIAL PASS`.
+
 ## Reproducible environment
 
 The isolated environment is stored with the artifact checkout, not in the source tree. To rebuild it:
