@@ -94,6 +94,18 @@ These latencies sit well above the compute-only core estimate (e.g. 16f: 341 ms 
 
 Stage C remains `PARTIAL PASS`. AT-07 (physical end-to-end latency), AT-08 (Doubao stop-capture tail), AT-09 (physical 30-minute live run), and AT-10 (physical fault drills with the real headset) are still `NOT RUN`; the simulated tools above provide engineering evidence only, and no performance claim is transferred to Mac B or other user hardware. See `docs/PERFORMANCE_GUIDE.md` for the per-device pre-launch procedure.
 
+### Mac A live-device verification (2026-09-16)
+
+First physical-device runs of the bridge (`runs/mac-a-device-120s-20260916.json`, `mac-a-device-30min-20260916.json`), using the built-in `MacBook Air Microphone`, the public enrollment sample, and the benchmarked 8-frame chunk. These runs contain no user speech (room audio only, never persisted) and do not complete the handoff's user-speech items; they validate the real CoreAudio device path.
+
+- 120 s run: `STOPPED` cleanly, 12,116 callbacks, 1,888 model calls (p50/p95/max 33.6/37.4/72.8 ms), no fault, no stream errors, input queue peak 6 blocks, ring peak 142.6 ms, underruns 204 ms concentrated in startup settling.
+- 30-minute run (`mac-a-device-30min-20260916.json` + `-ps.log`): `STOPPED`, 180,808 callbacks, 28,244 model calls (p50/p95/max 33.5/37.3/207.4 ms), no fault, engine errors empty, input queue peak 21/50 blocks, ring peak 296.7 ms, underruns 364 ms total (0.02%), CPU ≈ 55% and RSS ≈ 150 MB flat for the whole run. PortAudio reported **4 `input overflow` statuses** (~4 × 10 ms of input dropped by the driver over 30 min): reported discontinuities, not a fault, not continuous, and no raw passthrough. Steady-state bridge-internal latency settled at p50/p95/max 360.0/360.2/467.6 ms — higher than the 120 s run's 220 ms because the output-ring lead ratchets up in bursts toward an equilibrium below its 500 ms bound; long-run internal latency therefore uses the 30-minute figure, not the 120 s one.
+- Real-callback bridge-internal latency p50/p95/max 200.1/220.0/220.3 ms — close to the simulated paced run at the same chunk size (200.1/201.4/294.9 ms), validating the simulator against real CoreAudio scheduling.
+- BlackHole auto-loopback was re-probed after the user restored settings and **still captures silence** (`runs/mac-a-loopback-20260916.json`, gain 0.0, correlation 0.0) versus the clean 2026-09-13 baseline (256 ms, gain ≈ 1, SNR 99.68 dB). Recorded as environment-not-recovered; AT-07 automatic external measurement remains incomplete, and no system setting was altered to force it.
+- The user-speech live session (private enrollment, 120 s dictation, 30-minute Doubao acceptance with the STAGE_A phrases, and manual "speech-end → text" timing recorded side-by-side, never subtracted) is scripted in `docs/MAC_A_LIVE_SESSION.md` and still pending user participation.
+
+Stage C remains `PARTIAL PASS`; AT-07 through AT-10 stay `NOT RUN` until that session and the physical fault drills complete.
+
 ## Reproducible environment
 
 The isolated environment is stored with the artifact checkout, not in the source tree. To rebuild it:

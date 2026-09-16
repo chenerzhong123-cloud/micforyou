@@ -159,6 +159,7 @@ def test_ledger_ignores_positions_before_first_input() -> None:
 def test_sleep_until_returns_remaining_error() -> None:
     deadline = time.perf_counter() + 0.02
     remaining = sleep_until(deadline)
-    assert remaining == pytest.approx(0.0, abs=0.01)
+    # Waking early would break pacing; waking late is allowed under load.
+    assert remaining <= 0.005
     late = sleep_until(time.perf_counter() - 1.0)
     assert late < 0
