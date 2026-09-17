@@ -1,6 +1,6 @@
 # Mac B + wired headset evaluation
 
-Date: 2026-09-15. Scope: offline evaluation of recordings captured on the intended workstation/microphone combination, Mac B with the user's wired headset.
+Date: 2026-09-15. Scope: offline evaluation of recordings captured on the intended workstation/microphone combination, Mac B with the user's wired headset. A second independent recording set and Mac B's local M1 benchmark are documented in [Mac B results — 2026-09-17](MAC_B_20260917_RESULTS.md).
 
 ## Input validity
 

@@ -83,7 +83,7 @@ local-models/wesep-real-tse/.venv-official/bin/python experiments/measure_bridge
   --result handoff/mac-b-paced.json
 ```
 
-`status` 必须为 `COMPLETED` 且 `errors` 为空才继续；出现 `FAULT` 换更大帧数重测一次，仍失败则带回两个 JSON 停止。判定标准详见 `docs/PERFORMANCE_GUIDE.md`（注意：该工具只能筛掉明显不达标配置，不能证明 AT-07 通过）。
+`status` 必须为 `COMPLETED` 且 `errors` 为空才继续；出现 `FAULT` 换更大帧数重测一次，仍失败则带回两个 JSON 停止。判定标准详见 `docs/PERFORMANCE_GUIDE.md`（注意：该工具只能筛掉明显不达标配置，不能证明 AT-07 通过）。2026-09-17 的 M1 Mac B 两次 benchmark 均为 `unsupported`，所以在当前模型不变时不要安装 BlackHole 或强行继续 live；见 `docs/MAC_B_20260917_RESULTS.md`。
 
 ## 阶段 2 · 豆包句尾基线对照（需要说话，不用 bridge，约 10 分钟）
 
@@ -121,9 +121,9 @@ local-models/wesep-real-tse/.venv-official/bin/python experiments/run_real_tse_b
 ```text
 handoff/mac-b-inventory.json          # 必需：设备与环境
 handoff/mac-b-benchmark.json          # 必需：Mac B 性能分级
-handoff/mac-b-paced.json              # 必需：建议值配速复核
-handoff/live-120s.json                # 必需：首次实时桥结果
-handoff/live-1800s.json               # 完成 30 分钟后提供
+handoff/mac-b-paced.json              # 仅 benchmark 支持实时后才会存在
+handoff/live-120s.json                # 仅 paced 复核通过后才会存在
+handoff/live-1800s.json               # 仅 120 秒 live 通过后才会存在
 handoff/doubao-baseline.txt           # 必需：AT-08 归因基线
 handoff/doubao-transcripts.txt        # 仅非敏感测试句的逐字输出
 ```

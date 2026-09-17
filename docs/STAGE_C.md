@@ -1,6 +1,6 @@
 # Stage C — causal core and real-time bridge
 
-Status: `PARTIAL PASS`. The causal/stateful processing core passes equivalence and CPU timing checks. Offline Mac B-derived audio can traverse BlackHole → Doubao with material target recovery and no observed target-absent text; this is not a physical-headset live run. Physical-headset → model → BlackHole, end-to-end p95, fault injection, and 30-minute stability remain `NOT RUN`.
+Status: `PARTIAL PASS`. The causal/stateful core and fault-silence behavior pass engineering checks, and Mac A completed live bridge runs, but interactive 30-minute use exposed CoreAudio stalls and load-induced overflow. Mac B's second wired-headset set passes offline extraction, while two local M1 benchmarks classify the current model as `UNSUPPORTED` for real time. End-to-end p95, stable interactive 30-minute operation, and complete physical fault drills remain unresolved.
 
 ## Why the model is actually streamable
 
@@ -122,6 +122,12 @@ User-participation session per `docs/MAC_A_LIVE_SESSION.md`: private enrollment 
 **Doubao acceptance through the chain (four dictation rounds, exact transcripts recorded):** phrase 1 intact 4/4; phrase 2 intact 3/4 (one round lost the final 「尾。」 and merged with the next phrase); phrase 3 intact 1/4 (two rounds lost trailing characters — 「截断。」 and 「截断尾。」— and one early round changed 录音→录制). All successful dictations went through the full bridge (Doubao was on BlackHole the whole time), so the intermittent tail loss is through-chain; no physical-mic Doubao baseline was collected in this session to separate bridge-induced gaps from Doubao's own endpointing, and no stopwatch timings were systematically captured.
 
 **Acceptance status after the session:** AT-07 `NOT RUN` as an end-to-end pass (bridge-internal p95 340 ms recorded; external path unmeasurable while BlackHole loopback capture is dead; user timings not collected). AT-08 has evidence of intermittent through-chain tail loss with no baseline comparison — inconclusive, needs a physical-mic baseline round. AT-09 `FAIL` for now: two environmental CoreAudio wedges plus a load-induced queue-overflow fault; a production bridge needs an IO-liveness watchdog with stream reopen before the 30-minute criterion can be retried. AT-10 partially evidenced: every fault (8-frame overload, queue overflow) produced silence with zero raw passthrough and no automatic device switch; physical unplug drills remain untested. Stage C stays `PARTIAL PASS`.
+
+### Mac B M1 benchmark and second recording set (2026-09-17)
+
+Mac B is a MacBook Pro M1 (`MacBookPro17,1`, 8 cores, macOS 15.7.3). Two 60-second complete-path CPU benchmarks reproduced an `unsupported` decision: RTF for 8/16/24/32 frames was 4.167/2.512/1.977/1.680 on the first run and 4.110/2.478/1.895/1.625 on the rerun. Every model-call p95 exceeded its chunk interval, and even the best average RTF remained well above 1. Per the pre-launch gate, no paced or live bridge run was attempted; installing BlackHole would not change this compute result.
+
+A second independent wired-headset recording set passed file integrity checks and offline target extraction. Normal-speech SI-SDRi was +10.87/+15.46/+18.78 dB and quiet-speech SI-SDRi was +6.91/+12.75/+17.22 dB at 0/-6/-12 dB TIR. Target-absent attenuation was 21.02 dB, weaker than the prior set's 33.47 dB, so no zero-leakage claim is warranted. Full details are in [Mac B results — 2026-09-17](MAC_B_20260917_RESULTS.md).
 
 ## Reproducible environment
 

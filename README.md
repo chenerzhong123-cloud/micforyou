@@ -1,6 +1,6 @@
 # MicForYou
 
-MicForYou keeps Doubao IME as the ASR/text layer and sends locally processed audio to it through BlackHole 2ch. BlackHole → Doubao routing is verified. A free local REAL-TSE causal checkpoint now passes synthetic effect and stateful-streaming checks. Mac B recordings have offline effect evidence and a controlled Doubao transcription A/B result, but Mac B live-device latency and the 30-minute run remain pending; this project does not yet claim daily usability.
+MicForYou keeps Doubao IME as the ASR/text layer and sends locally processed audio to it through BlackHole 2ch. BlackHole → Doubao routing is verified. A free local REAL-TSE causal checkpoint passes offline effect and stateful-streaming checks. Mac A live tests exposed interactive stability limits; Mac B wired-headset recordings pass offline extraction, but its M1 CPU is `unsupported` for the current model in two local benchmarks. This project does not yet claim daily usability.
 
 ## Stage A quick start
 
