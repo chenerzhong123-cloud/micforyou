@@ -124,6 +124,12 @@ def main() -> None:
     parser.add_argument("--frames", type=int, nargs="+", default=[8, 16, 24])
     parser.add_argument("--audio-seconds", type=float, default=60.0)
     parser.add_argument("--audio-block", type=int, default=480)
+    parser.add_argument(
+        "--torch-threads",
+        type=int,
+        default=None,
+        help="override the thread count after wesep import (upstream sets it to 1)",
+    )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--tir-db", type=float, default=-6.0)
     parser.add_argument("--result", type=Path, required=True)
@@ -133,9 +139,15 @@ def main() -> None:
         raise SystemExit("frames values must be within 1..128")
     if args.audio_seconds < 5:
         raise SystemExit("--audio-seconds must be >= 5 for stable percentiles")
+    if args.torch_threads is not None and args.torch_threads < 1:
+        raise SystemExit("--torch-threads must be >= 1")
 
     sys.path.insert(0, str(args.repo))
     import wesep  # noqa: PLC0415
+
+    upstream_torch_threads = torch.get_num_threads()
+    if args.torch_threads is not None:
+        torch.set_num_threads(args.torch_threads)
 
     extractor = wesep.load_model_local(str(args.model_dir))
     model = extractor.model.eval()
@@ -187,6 +199,7 @@ def main() -> None:
         {
             "torch": torch.__version__,
             "torch_threads": torch.get_num_threads(),
+            "upstream_torch_threads": upstream_torch_threads,
             "benchmark_host_note": "single-host snapshot; results are not transferable",
         }
     )

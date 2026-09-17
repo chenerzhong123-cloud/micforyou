@@ -397,6 +397,12 @@ def main() -> None:
     parser.add_argument("--frames-per-chunk", type=int, required=True)
     parser.add_argument("--duration", type=float, default=60.0)
     parser.add_argument("--audio-block", type=int, default=480)
+    parser.add_argument(
+        "--torch-threads",
+        type=int,
+        default=None,
+        help="override the thread count after wesep import (upstream sets it to 1)",
+    )
     parser.add_argument("--queue-ms", type=float, default=500.0)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--tir-db", type=float, default=-6.0)
@@ -408,8 +414,15 @@ def main() -> None:
     parser.add_argument("--result", type=Path, required=True)
     args = parser.parse_args()
 
+    if args.torch_threads is not None and args.torch_threads < 1:
+        raise SystemExit("--torch-threads must be >= 1")
+
     sys.path.insert(0, str(args.repo))
     import wesep  # noqa: PLC0415
+
+    upstream_torch_threads = torch.get_num_threads()
+    if args.torch_threads is not None:
+        torch.set_num_threads(args.torch_threads)
 
     extractor = wesep.load_model_local(str(args.model_dir))
     model = extractor.model.eval()
@@ -424,7 +437,11 @@ def main() -> None:
         conditioning = precompute_conditioning(model, enrollment)
 
     system = collect_system_info(
-        {"torch": torch.__version__, "torch_threads": torch.get_num_threads()}
+        {
+            "torch": torch.__version__,
+            "torch_threads": torch.get_num_threads(),
+            "upstream_torch_threads": upstream_torch_threads,
+        }
     )
     print(
         f"simulated bridge latency run: frames={args.frames_per_chunk}, "

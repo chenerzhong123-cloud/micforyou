@@ -83,7 +83,19 @@ local-models/wesep-real-tse/.venv-official/bin/python experiments/measure_bridge
   --result handoff/mac-b-paced.json
 ```
 
-`status` 必须为 `COMPLETED` 且 `errors` 为空才继续；出现 `FAULT` 换更大帧数重测一次，仍失败则带回两个 JSON 停止。判定标准详见 `docs/PERFORMANCE_GUIDE.md`（注意：该工具只能筛掉明显不达标配置，不能证明 AT-07 通过）。2026-09-17 的 M1 Mac B 两次 benchmark 均为 `unsupported`，所以在当前模型不变时不要安装 BlackHole 或强行继续 live；见 `docs/MAC_B_20260917_RESULTS.md`。
+`status` 必须为 `COMPLETED` 且 `errors` 为空才继续；出现 `FAULT` 换更大帧数重测一次，仍失败则带回两个 JSON 停止。判定标准详见 `docs/PERFORMANCE_GUIDE.md`（注意：该工具只能筛掉明显不达标配置，不能证明 AT-07 通过）。2026-09-17 的 M1 Mac B 两次 upstream 单线程 benchmark 均为 `unsupported`，所以不要安装 BlackHole 或强行继续 live。先在最新版仓库做一次短线程扫描：
+
+```bash
+for n in 2 4; do
+  local-models/wesep-real-tse/.venv-official/bin/python experiments/benchmark_real_tse.py \
+    --repo "$PWD/local-models/wesep-real-tse" \
+    --model-dir "$PWD/local-models/wesep-real-tse/pretrained/tfmap_context_causal_100" \
+    --audio-seconds 10 --frames 8 16 24 32 --torch-threads "$n" \
+    --result "handoff/mac-b-benchmark-threads-${n}.json"
+done
+```
+
+若 2/4 threads 仍全部 `unsupported`，当前 PyTorch CPU 后端的 M1 结论即确认，停止 live 并转向更轻模型/后端。若出现受支持候选，用相同 `--torch-threads` 重跑 60 秒 benchmark，再把该参数原样带入 paced 与 live 命令。详见 `docs/MAC_B_20260917_RESULTS.md`。
 
 ## 阶段 2 · 豆包句尾基线对照（需要说话，不用 bridge，约 10 分钟）
 

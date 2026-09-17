@@ -142,9 +142,18 @@ def main() -> None:
         help="must be selected from a local benchmark; do not assume a safe default",
     )
     parser.add_argument("--audio-block", type=int, default=480)
+    parser.add_argument(
+        "--torch-threads",
+        type=int,
+        default=None,
+        help="override the thread count after wesep import (upstream sets it to 1)",
+    )
     parser.add_argument("--queue-ms", type=float, default=500)
     parser.add_argument("--result", type=Path, required=True)
     args = parser.parse_args()
+
+    if args.torch_threads is not None and args.torch_threads < 1:
+        raise SystemExit("--torch-threads must be >= 1")
 
     devices = list_devices()
     input_device = resolve_device(devices, args.input_device, "input")
@@ -153,6 +162,10 @@ def main() -> None:
 
     sys.path.insert(0, str(args.repo))
     import wesep  # noqa: PLC0415
+
+    upstream_torch_threads = torch.get_num_threads()
+    if args.torch_threads is not None:
+        torch.set_num_threads(args.torch_threads)
 
     extractor = wesep.load_model_local(str(args.model_dir))
     model = extractor.model.eval()
@@ -247,6 +260,8 @@ def main() -> None:
         "sample_rate": sample_rate,
         "audio_block": args.audio_block,
         "frames_per_model_chunk": args.frames_per_chunk,
+        "torch_threads": torch.get_num_threads(),
+        "upstream_torch_threads": upstream_torch_threads,
         "model_chunk_ms": args.frames_per_chunk * 8,
         "algorithmic_latency_ms": 24,
         "estimated_core_latency_ms": estimate_core_latency_ms(
