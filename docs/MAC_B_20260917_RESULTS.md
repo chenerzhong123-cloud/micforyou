@@ -41,6 +41,6 @@ For target-absent public interference, output attenuation is 21.02 dB and output
 - Mac B wired-headset offline target extraction: `PASS` on a second independent recording set.
 - Current model's upstream single-thread runtime on Mac B M1: `UNSUPPORTED`; explicit 2/4-thread probes remain pending.
 - Mac B live bridge, paced latency, BlackHole → Doubao and 30-minute stability: intentionally `NOT RUN` after the performance gate failed.
-- The only useful immediate Mac B user test that does not depend on the bridge is the Doubao physical-microphone sentence-tail baseline described in `MAC_B_CONTINUATION.md` stage 2.
+- The user waived the Doubao physical-microphone sentence-tail baseline and stated that direct capture can be assumed clear and complete. This is a user-provided expectation, not a measured AT-08 result; it is not a blocker for the performance investigation.
 
 If the thread sweep also fails, support for M1-class devices needs a materially cheaper model/backend (for example model compression, optimized deployment, or a smaller architecture), followed by the same effect and safety gates. Changing only the chunk size is not sufficient.
