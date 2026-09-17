@@ -28,4 +28,6 @@ See `docs/STAGE_A.md` for routing acceptance and recovery, `docs/STAGE_B.md` for
 
 Before enabling the live bridge on any machine, run the pre-launch benchmark and paced latency check described in [the performance guide](docs/PERFORMANCE_GUIDE.md); the live bridge has no default `--frames-per-chunk` by design.
 
+For the pending M1 thread-count check, give the Mac B Agent [the Torch thread-sweep handoff](docs/MAC_B_THREAD_SWEEP_HANDOFF.md).
+
 After BlackHole has been restored on Mac A, use [the Mac A live-acceptance handoff](docs/MAC_A_LIVE_ACCEPTANCE_HANDOFF.md) for the physical bridge, stability, and manual-experience checks. The one-shot user procedure (enrollment, 120 s dictation, 30-minute Doubao check, restore) is [MAC_A_LIVE_SESSION.md](docs/MAC_A_LIVE_SESSION.md).
