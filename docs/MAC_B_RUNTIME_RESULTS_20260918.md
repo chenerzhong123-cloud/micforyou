@@ -1,6 +1,6 @@
 # Mac B Runtime results — 2026-09-18
 
-Scope: the returned Mac B reports for the complete PyTorch thread sweep and the first stateful ONNX Runtime experiment. The raw JSON, ONNX model, reusable experiment scripts, model weights and private audio remain on Mac B and were not available for independent rerun on Mac A.
+Scope: the returned Mac B reports for the complete PyTorch thread sweep and the first stateful ONNX Runtime experiment. At this report's initial cutoff, the reusable scripts and raw artifacts were still on Mac B. The scripts were later returned, reviewed and integrated at commit `3600fa8`; model weights and private audio remain outside Git.
 
 ## Evidence boundary
 
@@ -67,9 +67,9 @@ The measurements prove that this exported graph on ORT CPU is insufficient on th
 
 ```text
 PyTorch CPU thread sweep: UNSUPPORTED
-Stateful FP32 ONNX correctness: PASS (reported, source pending)
+Stateful FP32 ONNX correctness: PASS (reported; source later integrated)
 ONNX Runtime CPU performance: FAIL
 Mac B live path: NOT RUN by gate
 ```
 
-The bounded INT8/CoreML experiment has now returned. INT8 failed correctness. CoreML graph correctness and partition diagnostics passed, but code review found that its performance result used an explicit one-thread CPU fallback session while labeling it `auto`; the final M1 stop decision is therefore pending a corrected auto/4-thread CoreML matrix. See `MAC_B_INT8_COREML_RESULTS_20260918.md` and `MAC_B_COREML_THREAD_RECHECK_HANDOFF.md`.
+The bounded INT8/CoreML experiment has now completed. INT8 failed correctness. The first CoreML report mislabeled an explicit one-thread session as `auto`; the corrected auto/four-thread rerun then produced six valid but failing candidates, with best RTF 1.052 at 24 frames/four threads. All 12 LSTMs still fell back to CPU. The final decision is `CURRENT REAL-TSE ON M1: STOP`. See `MAC_B_INT8_COREML_RESULTS_20260918.md` and `MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md`.

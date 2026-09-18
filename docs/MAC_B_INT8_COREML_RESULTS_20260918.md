@@ -45,7 +45,7 @@ Returned one-thread CoreML observations, relabeled correctly:
 | 16 | 1.832 | 249 ms | diagnostic only |
 | 24 | 1.459 | 293 ms | diagnostic only |
 
-The project must not claim `CURRENT REAL-TSE ON M1: STOP` until the corrected CoreML auto/4-thread fallback matrix is run. INT8 remains failed; only the CoreML performance gate is reopened.
+At this audit point, the project could not claim `CURRENT REAL-TSE ON M1: STOP` until the corrected CoreML auto/4-thread fallback matrix was run. That rerun is now complete and is recorded at the end of this document.
 
 ## Environment metadata discrepancy
 
@@ -64,4 +64,4 @@ The five returned experiment scripts were reviewed and imported. Before integrat
 - ONNX/ORT experiment dependencies are pinned in `requirements-real-tse.txt`.
 - pure unit tests lock the auto/4-thread setting contract.
 
-See `MAC_B_COREML_THREAD_RECHECK_HANDOFF.md` for the only remaining M1 run.
+The corrected rerun is complete. Six correctly labeled CoreML auto/four-thread candidates all missed `RTF <= 0.8`; best RTF was 1.052 at 24 frames/four threads. The final decision is `CURRENT REAL-TSE ON M1: STOP`. See `MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md`.

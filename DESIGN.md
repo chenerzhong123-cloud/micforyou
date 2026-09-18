@@ -28,7 +28,7 @@ BlackHole 提供应用间音频传递。前处理服务显式读取实体耳机�
 
 优先审查 WeSep 的权重、推理代码、许可证及实际可运行性；OpenSpeakerBeam-SS 作为实时候选对照。选型以办公室样本、目标缺席表现和本机延迟为依据，不按仓库名称或 stars 决定。未找到适用权重时，应记录阻塞和替代候选；不默认从零训练或使用远程 GPU。运行时只接受免费、本地方案，不用付费服务或试用额度兜底。
 
-当前实测首选是 REAL-TSE 官方 `tfmap_context_causal_100`。它在时间轴上使用单向 LSTM；适配层显式保存六层 recurrent state，并实现有界 streaming STFT/OLA。官方接口没有暴露 state 不是拒绝理由，整段与流式输出一致性才是判据。CPU 8-frame（64 ms）块作为实时桥默认值，理由是比 4-frame 配置有更充足的算力余量；代价是约增加 32 ms 批等待。模型源码根目录和权重没有完整、明确的统一许可证，因此目前仅用于本机研究验证，不可据此宣称可分发。
+REAL-TSE 官方 `tfmap_context_causal_100` 是已通过离线质量和 stateful correctness 的基线。它在时间轴上使用单向 LSTM；适配层显式保存六层 recurrent state，并实现有界 streaming STFT/OLA。官方接口没有暴露 state 不是拒绝理由，整段与流式输出一致性才是判据。该模型已在 Mac B M1 上完成 PyTorch、ONNX Runtime CPU、Dynamic INT8 和 corrected CoreML 的有界验证：INT8 correctness 失败，其余后端的最佳有效 RTF 仍为 1.052，故 `CURRENT REAL-TSE ON M1: STOP`。它不再是该机器的实时部署候选，只保留为质量基线。模型源码根目录和权重没有完整、明确的统一许可证，因此也不可据此宣称可分发。
 
 关键未知项：
 

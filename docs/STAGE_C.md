@@ -135,7 +135,7 @@ Mac B returned a full 1/2/4/8-thread × 8/16/24/32-frame PyTorch matrix. All 16 
 
 The same machine then exported the six-layer recurrent neural core to an opset-17 FP32 ONNX model with all 12 h/c state tensors exposed. The returned report records max absolute error 1.16e-06 for one chunk and 3.10e-06 across 100 stateful chunks, below the 1e-03 correctness limit and without reported drift. ORT CPU performance nevertheless failed: all 12 auto/1/2/4-thread × 8/16/24-frame combinations were slower than real time; best RTF was 1.551 at four threads / 24 frames.
 
-These results are report evidence rather than an independent rerun: Mac B did not return the three ONNX scripts or raw JSON/ONNX model. Mac B cannot commit or push Git changes, so the next handoff begins by preserving scripts and results in a sanitized offline return bundle; Mac A performs later review and Git integration. It then runs bounded Dynamic INT8 and CoreML EP branches. Neither branch may enter fidelity or live testing unless it reaches RTF <= 0.8; if both miss, optimization of this REAL-TSE TFMap on M1 stops. Full tables and evidence limits are in [Mac B runtime results — 2026-09-18](MAC_B_RUNTIME_RESULTS_20260918.md).
+At this report checkpoint the results were report evidence rather than an independent rerun: Mac B had not yet returned the ONNX scripts or raw artifacts. Because Mac B cannot commit or push Git changes, the following handoff preserved scripts and results in a sanitized offline return bundle for Mac A review and integration. The bounded Dynamic INT8 and CoreML EP branches described here are now complete in the sections below. Full tables and evidence limits are in [Mac B runtime results — 2026-09-18](MAC_B_RUNTIME_RESULTS_20260918.md).
 
 ### Mac B INT8/CoreML return audit (2026-09-18)
 
@@ -143,7 +143,13 @@ The sanitized return bundle passed manifest and privacy-boundary checks. Dynamic
 
 CoreML static 8/16/24-frame graphs remained numerically aligned with the PyTorch reference, and the returned capability log showed 2,071/2,248 nodes accepted across 18 CoreML partitions. However, all 12 LSTM nodes were unsupported and fell back to CPU. Code review then found that the CoreML benchmark explicitly used one ORT intra-op thread but labeled its candidates `auto`. Because the recurrent CPU fallback is the dominant unaccelerated path and prior ORT results are thread-sensitive, the reported best RTF 1.459 is diagnostic rather than a valid final gate result.
 
-The imported benchmark now preserves the exact requested auto/explicit thread setting in both session construction and JSON, with regression tests. Stage C remains `PARTIAL PASS`; the M1 runtime decision is reopened only for one corrected CoreML auto/4-thread matrix. Details are in [the INT8/CoreML return audit](MAC_B_INT8_COREML_RESULTS_20260918.md).
+The imported benchmark preserves the exact requested auto/explicit thread setting in both session construction and JSON, with regression tests. At this audit point the M1 runtime decision was reopened for one corrected CoreML auto/4-thread matrix; the following section records its completion. Details of the initial audit are in [the INT8/CoreML return audit](MAC_B_INT8_COREML_RESULTS_20260918.md).
+
+### Mac B corrected CoreML thread recheck (2026-09-18)
+
+The corrected rerun closed the final runtime question. All six static 8/16/24-frame × auto/four-thread candidates were valid and correctly labeled, but all exceeded the `RTF <= 0.8` continuation gate. Best RTF was 1.052 at 24 frames/four threads, while all 12 recurrent LSTM operators still fell back to CPU. Auto and four-thread results differed by no more than about 2%, so thread selection is no longer an unresolved variable.
+
+Dynamic INT8 failed correctness and corrected CoreML failed performance. The final M1 decision is therefore `CURRENT REAL-TSE ON M1: STOP`; fidelity, paced and live testing of this backend remain `STOPPED BY GATE`. Stage C stays `PARTIAL PASS` because no replacement model has passed the quality/runtime/live sequence. Full evidence is in [the corrected CoreML thread recheck](MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md); the replacement-model boundary is in [the lightweight TSE screening](LIGHTWEIGHT_TSE_SCREENING_20260918.md).
 
 ## Reproducible environment
 

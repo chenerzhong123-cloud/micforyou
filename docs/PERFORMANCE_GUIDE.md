@@ -74,9 +74,9 @@ benchmark 看不到实时队列动态。Mac A 实测：16-frame benchmark RTF 0.
 
 **Mac A 已验证**：benchmark 与建议函数可重复运行（fast/8，核心估计 121.5 ms）；配速延迟 8f p95 202 ms、16f p95 341/341 ms、24f p95 381/430 ms；故障静音语义有单元测试覆盖；30 分钟 16f 模拟 soak 见 STAGE_C。BlackHole 自动回采当前失效（9-13 正常、9-15 静音），已列为环境项。
 
-**Mac B 未验证**：Mac B 从未运行过 benchmark、配速延迟或 soak；上述任何数字不可外推到 Mac B。Mac B 启用前按第 1–3 步各跑一次（各约 1–3 分钟）。
+**Mac B 已完成当前 REAL-TSE 的性能淘汰**：Mac B M1 的 PyTorch、ORT CPU 和 corrected CoreML benchmark 均未通过实时门槛，Dynamic INT8 还失败 correctness；最佳有效结果为 CoreML 24f/4 threads 的 RTF 1.052。因此不要再对该模型执行第 2–3 步或 live/soak，结论为 `CURRENT REAL-TSE ON M1: STOP`。这不代表 Mac B 硬件永久不支持 MicForYou；替换为新模型后必须从第 1 步重新分级。
 
-**全用户设备仍未知**：样本只有 Mac A 一台的开发负载快照；不同芯片/内存/负载下的分布未测量，不能宣称通用性能。
+**全用户设备仍未知**：现有样本覆盖 Mac A 和一台 M1 Mac B，但不同芯片、内存、负载与麦克风组合下的分布仍未测量，不能宣称通用性能。
 
 ## 边界提醒
 

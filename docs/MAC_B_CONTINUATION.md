@@ -1,5 +1,7 @@
 # Mac B 离线续跑包
 
+> **2026-09-18 状态更新：不要再执行本文的 REAL-TSE 性能、paced 或 live 命令。** 后续 PyTorch、ORT CPU、Dynamic INT8 和 corrected CoreML 验证已经完成；Mac B M1 最佳有效 RTF 为 1.052，结论是 `CURRENT REAL-TSE ON M1: STOP`。本文保留为历史操作记录。新模型满足 [lightweight TSE source gate](LIGHTWEIGHT_TSE_SCREENING_20260918.md) 前，Mac B 没有待执行任务。
+
 目的：在不能 SSH、不能共享桌面的 Mac B 上，独立完成真实耳机 → TSE → BlackHole → 豆包的后续验收。Git 只传脚本和文档；模型、录音、运行 JSON 与任何转写内容都不提交。
 
 当前仓库提交的离线结论只说明：Mac B 有线耳机录音的离线 TSE 效果良好，且其离线输出可在另一台 Mac 经 BlackHole 被豆包转写。它**不**说明 Mac B 本机已经跑过实时链路、延迟或稳定性。以下流程已并入 2026-09-16 Mac A 真机验收的全部教训（提交 `191ad63`），照此执行即可，无需其他上下文。
@@ -83,7 +85,7 @@ local-models/wesep-real-tse/.venv-official/bin/python experiments/measure_bridge
   --result handoff/mac-b-paced.json
 ```
 
-`status` 必须为 `COMPLETED` 且 `errors` 为空才继续；出现 `FAULT` 换更大帧数重测一次，仍失败则带回两个 JSON 停止。判定标准详见 `docs/PERFORMANCE_GUIDE.md`（注意：该工具只能筛掉明显不达标配置，不能证明 AT-07 通过）。2026-09-18 已完成完整 1/2/4/8-thread 扫描：16 组全部 `unsupported`，最佳 RTF 1.603。随后 stateful FP32 ONNX correctness 通过，但 ORT CPU 最佳 RTF 仍为 1.551。因此下面的线程扫描命令已经归档，不应再次执行；当前任务改为 `docs/MAC_B_INT8_COREML_HANDOFF.md` 的有界 INT8 + CoreML 验证。
+`status` 必须为 `COMPLETED` 且 `errors` 为空才继续；出现 `FAULT` 换更大帧数重测一次，仍失败则带回两个 JSON 停止。判定标准详见 `docs/PERFORMANCE_GUIDE.md`（注意：该工具只能筛掉明显不达标配置，不能证明 AT-07 通过）。2026-09-18 已完成完整 1/2/4/8-thread 扫描：16 组全部 `unsupported`，最佳 RTF 1.603。随后 stateful FP32 ONNX correctness 通过，但 ORT CPU 最佳 RTF 仍为 1.551；Dynamic INT8 correctness 失败，corrected CoreML 最佳 RTF 1.052。所有命令均已归档，不应再次执行。
 
 历史线程扫描命令：
 
@@ -97,7 +99,7 @@ for n in 2 4; do
 done
 ```
 
-该扫描已经失败，当前 PyTorch CPU 后端的 M1 结论已确认。不要继续阶段 2/3 的实时链路，除非 INT8 或 CoreML 候选先通过 RTF、质量与 paced gates。详见 `docs/MAC_B_RUNTIME_RESULTS_20260918.md`。
+该扫描以及后续 INT8/CoreML 分支均已失败。不要继续阶段 2/3 的实时链路；只有替换模型先通过 source、correctness、RTF 和质量 gate 后才可恢复。详见 `docs/MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md`。
 
 ## 阶段 2 · 豆包句尾基线对照（需要说话，不用 bridge，约 10 分钟）
 
