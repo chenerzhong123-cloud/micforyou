@@ -72,4 +72,4 @@ ONNX Runtime CPU performance: FAIL
 Mac B live path: NOT RUN by gate
 ```
 
-The next bounded experiment is Dynamic INT8 plus CoreML EP. At least one branch must reach `RTF <= 0.8` before fidelity, 60-second, paced or live testing. If both remain above 0.8, stop optimizing this REAL-TSE TFMap for M1 and move to a lighter TSE architecture. See `MAC_B_INT8_COREML_HANDOFF.md`.
+The bounded INT8/CoreML experiment has now returned. INT8 failed correctness. CoreML graph correctness and partition diagnostics passed, but code review found that its performance result used an explicit one-thread CPU fallback session while labeling it `auto`; the final M1 stop decision is therefore pending a corrected auto/4-thread CoreML matrix. See `MAC_B_INT8_COREML_RESULTS_20260918.md` and `MAC_B_COREML_THREAD_RECHECK_HANDOFF.md`.

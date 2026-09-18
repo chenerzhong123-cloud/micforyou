@@ -28,6 +28,6 @@ See `docs/STAGE_A.md` for routing acceptance and recovery, `docs/STAGE_B.md` for
 
 Before enabling the live bridge on any machine, run the pre-launch benchmark and paced latency check described in [the performance guide](docs/PERFORMANCE_GUIDE.md); the live bridge has no default `--frames-per-chunk` by design.
 
-Mac B's returned thread sweep and ONNX CPU results are recorded in [the 2026-09-18 runtime report](docs/MAC_B_RUNTIME_RESULTS_20260918.md). The next bounded Mac B task is [the INT8 + CoreML handoff](docs/MAC_B_INT8_COREML_HANDOFF.md).
+Mac B's returned thread sweep and ONNX CPU results are recorded in [the 2026-09-18 runtime report](docs/MAC_B_RUNTIME_RESULTS_20260918.md). INT8 correctness failed; the first CoreML performance report mislabeled an explicit one-thread fallback session as `auto`, so the only pending M1 task is [the corrected CoreML thread recheck](docs/MAC_B_COREML_THREAD_RECHECK_HANDOFF.md). The audit is recorded in [the returned INT8/CoreML results](docs/MAC_B_INT8_COREML_RESULTS_20260918.md).
 
 After BlackHole has been restored on Mac A, use [the Mac A live-acceptance handoff](docs/MAC_A_LIVE_ACCEPTANCE_HANDOFF.md) for the physical bridge, stability, and manual-experience checks. The one-shot user procedure (enrollment, 120 s dictation, 30-minute Doubao check, restore) is [MAC_A_LIVE_SESSION.md](docs/MAC_A_LIVE_SESSION.md).

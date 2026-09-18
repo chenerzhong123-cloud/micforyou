@@ -137,6 +137,14 @@ The same machine then exported the six-layer recurrent neural core to an opset-1
 
 These results are report evidence rather than an independent rerun: Mac B did not return the three ONNX scripts or raw JSON/ONNX model. Mac B cannot commit or push Git changes, so the next handoff begins by preserving scripts and results in a sanitized offline return bundle; Mac A performs later review and Git integration. It then runs bounded Dynamic INT8 and CoreML EP branches. Neither branch may enter fidelity or live testing unless it reaches RTF <= 0.8; if both miss, optimization of this REAL-TSE TFMap on M1 stops. Full tables and evidence limits are in [Mac B runtime results — 2026-09-18](MAC_B_RUNTIME_RESULTS_20260918.md).
 
+### Mac B INT8/CoreML return audit (2026-09-18)
+
+The sanitized return bundle passed manifest and privacy-boundary checks. Dynamic INT8 failed correctness decisively: first-chunk max absolute error 0.965, 100-chunk max 1.405, relative L2 error 1.25 and final c-state error up to 151.79. INT8 benchmarking was correctly not run.
+
+CoreML static 8/16/24-frame graphs remained numerically aligned with the PyTorch reference, and the returned capability log showed 2,071/2,248 nodes accepted across 18 CoreML partitions. However, all 12 LSTM nodes were unsupported and fell back to CPU. Code review then found that the CoreML benchmark explicitly used one ORT intra-op thread but labeled its candidates `auto`. Because the recurrent CPU fallback is the dominant unaccelerated path and prior ORT results are thread-sensitive, the reported best RTF 1.459 is diagnostic rather than a valid final gate result.
+
+The imported benchmark now preserves the exact requested auto/explicit thread setting in both session construction and JSON, with regression tests. Stage C remains `PARTIAL PASS`; the M1 runtime decision is reopened only for one corrected CoreML auto/4-thread matrix. Details are in [the INT8/CoreML return audit](MAC_B_INT8_COREML_RESULTS_20260918.md).
+
 ## Reproducible environment
 
 The isolated environment is stored with the artifact checkout, not in the source tree. To rebuild it:
