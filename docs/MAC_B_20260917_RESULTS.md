@@ -1,5 +1,7 @@
 # Mac B results — 2026-09-17
 
+Update (2026-09-18): the pending thread sweep has now completed and failed the real-time gate; stateful ONNX correctness passed, but ORT CPU performance also failed. This document remains the dated 2026-09-17 baseline. See `MAC_B_RUNTIME_RESULTS_20260918.md` for the current decision.
+
 Scope: Mac B local performance benchmark plus a second independent wired-headset recording set. Raw audio, generated mixtures, outputs, benchmark JSON and device inventory remain outside Git under `/Users/deuce/claudeproject/codexworks/micforyou/`.
 
 ## Machine and performance decision
@@ -17,7 +19,7 @@ Two independent 60-second full-path benchmarks used deterministic synthetic audi
 
 The second run reproduced the first after installation activity subsided. Both runs also record `torch_threads: 1`: importing upstream `wesep` resets PyTorch from the host default to one inference thread. The current single-thread REAL-TSE TFMap CPU path therefore cannot sustain real time on this M1 host. Per the safety gate, paced, live, BlackHole and 30-minute bridge runs were correctly not attempted. Increasing the chunk again would reduce call overhead but would not repair both the RTF and the 500 ms latency budget.
 
-The repository now supports an explicit `--torch-threads` override in benchmark, paced and live commands. A short 2/4-thread sweep is still required before declaring the M1 hardware itself unsupported. On Mac A M5, a 5-second 16-frame probe found one thread faster than two or four (RTF 0.372 vs 0.433/0.442), so multithreading is not presumed to help; Mac B must measure it locally.
+The repository now supports an explicit `--torch-threads` override in benchmark, paced and live commands. At this report's cutoff, a short 2/4-thread sweep was still required before declaring the M1 hardware itself unsupported. That follow-up is now complete; see the update above.
 
 The inventory was captured before the wired headset was connected and therefore listed only the built-in microphone/speaker and no BlackHole. The later recording manifest independently confirms that the wired headset appeared as a 48 kHz mono `外置麦克风`. This timing difference is not a data inconsistency.
 
@@ -39,7 +41,7 @@ For target-absent public interference, output attenuation is 21.02 dB and output
 ## Result
 
 - Mac B wired-headset offline target extraction: `PASS` on a second independent recording set.
-- Current model's upstream single-thread runtime on Mac B M1: `UNSUPPORTED`; explicit 2/4-thread probes remain pending.
+- At the 2026-09-17 cutoff, the upstream single-thread runtime on Mac B M1 was `UNSUPPORTED`; the later explicit thread sweep is recorded in `MAC_B_RUNTIME_RESULTS_20260918.md`.
 - Mac B live bridge, paced latency, BlackHole → Doubao and 30-minute stability: intentionally `NOT RUN` after the performance gate failed.
 - The user waived the Doubao physical-microphone sentence-tail baseline and stated that direct capture can be assumed clear and complete. This is a user-provided expectation, not a measured AT-08 result; it is not a blocker for the performance investigation.
 

@@ -1,6 +1,6 @@
 # MicForYou
 
-MicForYou keeps Doubao IME as the ASR/text layer and sends locally processed audio to it through BlackHole 2ch. BlackHole → Doubao routing is verified. A free local REAL-TSE causal checkpoint passes offline effect and stateful-streaming checks. Mac A live tests exposed interactive stability limits; Mac B wired-headset recordings pass offline extraction, but its upstream single-thread M1 benchmarks are `unsupported` and explicit thread-count probes remain pending. This project does not yet claim daily usability.
+MicForYou keeps Doubao IME as the ASR/text layer and sends locally processed audio to it through BlackHole 2ch. BlackHole → Doubao routing is verified. A free local REAL-TSE causal checkpoint passes offline effect and stateful-streaming checks. Mac A live tests exposed interactive stability limits; Mac B wired-headset recordings pass offline extraction, but its complete PyTorch thread sweep and ONNX Runtime CPU benchmark are both too slow for real time. This project does not yet claim daily usability.
 
 ## Stage A quick start
 
@@ -28,6 +28,6 @@ See `docs/STAGE_A.md` for routing acceptance and recovery, `docs/STAGE_B.md` for
 
 Before enabling the live bridge on any machine, run the pre-launch benchmark and paced latency check described in [the performance guide](docs/PERFORMANCE_GUIDE.md); the live bridge has no default `--frames-per-chunk` by design.
 
-For the pending M1 thread-count check, give the Mac B Agent [the Torch thread-sweep handoff](docs/MAC_B_THREAD_SWEEP_HANDOFF.md).
+Mac B's returned thread sweep and ONNX CPU results are recorded in [the 2026-09-18 runtime report](docs/MAC_B_RUNTIME_RESULTS_20260918.md). The next bounded Mac B task is [the INT8 + CoreML handoff](docs/MAC_B_INT8_COREML_HANDOFF.md).
 
 After BlackHole has been restored on Mac A, use [the Mac A live-acceptance handoff](docs/MAC_A_LIVE_ACCEPTANCE_HANDOFF.md) for the physical bridge, stability, and manual-experience checks. The one-shot user procedure (enrollment, 120 s dictation, 30-minute Doubao check, restore) is [MAC_A_LIVE_SESSION.md](docs/MAC_A_LIVE_SESSION.md).

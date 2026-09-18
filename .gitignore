@@ -8,6 +8,8 @@ local-data/
 test-data/
 outputs/
 runs/
+/handoff/
+*.onnx
 *.wav
 *.flac
 *.m4a

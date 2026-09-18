@@ -83,7 +83,9 @@ local-models/wesep-real-tse/.venv-official/bin/python experiments/measure_bridge
   --result handoff/mac-b-paced.json
 ```
 
-`status` 必须为 `COMPLETED` 且 `errors` 为空才继续；出现 `FAULT` 换更大帧数重测一次，仍失败则带回两个 JSON 停止。判定标准详见 `docs/PERFORMANCE_GUIDE.md`（注意：该工具只能筛掉明显不达标配置，不能证明 AT-07 通过）。2026-09-17 的 M1 Mac B 两次 upstream 单线程 benchmark 均为 `unsupported`，所以不要安装 BlackHole 或强行继续 live。先在最新版仓库做一次短线程扫描：
+`status` 必须为 `COMPLETED` 且 `errors` 为空才继续；出现 `FAULT` 换更大帧数重测一次，仍失败则带回两个 JSON 停止。判定标准详见 `docs/PERFORMANCE_GUIDE.md`（注意：该工具只能筛掉明显不达标配置，不能证明 AT-07 通过）。2026-09-18 已完成完整 1/2/4/8-thread 扫描：16 组全部 `unsupported`，最佳 RTF 1.603。随后 stateful FP32 ONNX correctness 通过，但 ORT CPU 最佳 RTF 仍为 1.551。因此下面的线程扫描命令已经归档，不应再次执行；当前任务改为 `docs/MAC_B_INT8_COREML_HANDOFF.md` 的有界 INT8 + CoreML 验证。
+
+历史线程扫描命令：
 
 ```bash
 for n in 2 4; do
@@ -95,7 +97,7 @@ for n in 2 4; do
 done
 ```
 
-若 2/4 threads 仍全部 `unsupported`，当前 PyTorch CPU 后端的 M1 结论即确认，停止 live 并转向更轻模型/后端。若出现受支持候选，用相同 `--torch-threads` 重跑 60 秒 benchmark，再把该参数原样带入 paced 与 live 命令。详见 `docs/MAC_B_20260917_RESULTS.md`。
+该扫描已经失败，当前 PyTorch CPU 后端的 M1 结论已确认。不要继续阶段 2/3 的实时链路，除非 INT8 或 CoreML 候选先通过 RTF、质量与 paced gates。详见 `docs/MAC_B_RUNTIME_RESULTS_20260918.md`。
 
 ## 阶段 2 · 豆包句尾基线对照（需要说话，不用 bridge，约 10 分钟）
 

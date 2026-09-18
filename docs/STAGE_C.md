@@ -1,6 +1,6 @@
 # Stage C — causal core and real-time bridge
 
-Status: `PARTIAL PASS`. The causal/stateful core and fault-silence behavior pass engineering checks, and Mac A completed live bridge runs, but interactive 30-minute use exposed CoreAudio stalls and load-induced overflow. Mac B's second wired-headset set passes offline extraction, while two local M1 benchmarks classify the upstream single-thread runtime as `UNSUPPORTED`; an explicit thread-count sweep remains pending. End-to-end p95, stable interactive 30-minute operation, and complete physical fault drills remain unresolved.
+Status: `PARTIAL PASS`. The causal/stateful core and fault-silence behavior pass engineering checks, and Mac A completed live bridge runs, but interactive 30-minute use exposed CoreAudio stalls and load-induced overflow. Mac B's second wired-headset set passes offline extraction, while its complete PyTorch thread sweep and ONNX Runtime CPU benchmark both fail the real-time gate. End-to-end p95, stable interactive 30-minute operation, and complete physical fault drills remain unresolved.
 
 ## Why the model is actually streamable
 
@@ -125,9 +125,17 @@ User-participation session per `docs/MAC_A_LIVE_SESSION.md`: private enrollment 
 
 ### Mac B M1 benchmark and second recording set (2026-09-17)
 
-Mac B is a MacBook Pro M1 (`MacBookPro17,1`, 8 cores, macOS 15.7.3). Two 60-second complete-path CPU benchmarks reproduced an `unsupported` decision: RTF for 8/16/24/32 frames was 4.167/2.512/1.977/1.680 on the first run and 4.110/2.478/1.895/1.625 on the rerun. Every model-call p95 exceeded its chunk interval, and even the best average RTF remained well above 1. Both runs used the one thread selected by upstream `wesep`; explicit 2/4-thread probes are pending. Per the pre-launch gate, no paced or live bridge run was attempted; installing BlackHole would not change the measured single-thread compute result.
+Mac B is a MacBook Pro M1 (`MacBookPro17,1`, 8 cores, macOS 15.7.3). Two 60-second complete-path CPU benchmarks reproduced an `unsupported` decision: RTF for 8/16/24/32 frames was 4.167/2.512/1.977/1.680 on the first run and 4.110/2.478/1.895/1.625 on the rerun. Every model-call p95 exceeded its chunk interval, and even the best average RTF remained well above 1. Both runs used the one thread selected by upstream `wesep`; the explicit multi-thread follow-up was still pending at this dated checkpoint and is recorded in the next section. Per the pre-launch gate, no paced or live bridge run was attempted; installing BlackHole would not change the measured single-thread compute result.
 
 A second independent wired-headset recording set passed file integrity checks and offline target extraction. Normal-speech SI-SDRi was +10.87/+15.46/+18.78 dB and quiet-speech SI-SDRi was +6.91/+12.75/+17.22 dB at 0/-6/-12 dB TIR. Target-absent attenuation was 21.02 dB, weaker than the prior set's 33.47 dB, so no zero-leakage claim is warranted. Full details are in [Mac B results — 2026-09-17](MAC_B_20260917_RESULTS.md).
+
+### Mac B thread sweep and ONNX Runtime (2026-09-18)
+
+Mac B returned a full 1/2/4/8-thread × 8/16/24/32-frame PyTorch matrix. All 16 valid runs remained `unsupported`; best RTF was 1.603 at four threads / 32 frames. This closes the pending thread-count question: upstream's one-thread setting was not the reason the current REAL-TSE PyTorch path failed on M1. Paced, BlackHole, Doubao and live tests were correctly skipped by Gate A.
+
+The same machine then exported the six-layer recurrent neural core to an opset-17 FP32 ONNX model with all 12 h/c state tensors exposed. The returned report records max absolute error 1.16e-06 for one chunk and 3.10e-06 across 100 stateful chunks, below the 1e-03 correctness limit and without reported drift. ORT CPU performance nevertheless failed: all 12 auto/1/2/4-thread × 8/16/24-frame combinations were slower than real time; best RTF was 1.551 at four threads / 24 frames.
+
+These results are report evidence rather than an independent rerun: Mac B did not return the three ONNX scripts or raw JSON/ONNX model. Mac B cannot commit or push Git changes, so the next handoff begins by preserving scripts and results in a sanitized offline return bundle; Mac A performs later review and Git integration. It then runs bounded Dynamic INT8 and CoreML EP branches. Neither branch may enter fidelity or live testing unless it reaches RTF <= 0.8; if both miss, optimization of this REAL-TSE TFMap on M1 stops. Full tables and evidence limits are in [Mac B runtime results — 2026-09-18](MAC_B_RUNTIME_RESULTS_20260918.md).
 
 ## Reproducible environment
 
