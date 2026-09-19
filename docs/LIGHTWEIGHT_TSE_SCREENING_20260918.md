@@ -2,7 +2,86 @@
 
 ## Decision
 
-There is no reproducibly obtainable candidate ready for a Mac B benchmark at this cutoff. Do not send Mac B another runtime task until a pinned model artifact passes the source gate below. This is a model-supply block, not a Mac B hardware block.
+As of the 2026-09-19 follow-up, there is no candidate ready for a Mac B
+benchmark. The original cutoff was a model-supply block; the resumed search found
+and ran one additional causal checkpoint, which then failed the fixed quality
+gate. Do not send Mac B another runtime task until a new pinned candidate passes
+the source, correctness, Mac A runtime and private-recording quality gates. This
+is not a Mac B hardware block.
+
+### 2026-09-19 follow-up: source found, candidate stopped at quality gate
+
+The search was resumed instead of treating the missing `tse-conv-tasnet-48k`
+artifact as the end of the candidate space. One additional causal candidate passed
+the source and preliminary Mac A runtime gates:
+
+- source: `xu-shitong/TSE-through-Positive-Negative-Enroll` commit
+  `c8fb49bdd2a25f0753563b2884fd49c2a35ee8e6`;
+- checkpoint: Hugging Face revision
+  `86f664b56ca0e315475d3579f54e407e0470ee32`, file
+  `proposed-monaural.pt`, 7,871,086 bytes, SHA-256
+  `3bc59b34334db782e8070486883b9433cd373d5d730001032d80efe96ae833b4`;
+- model: 16 kHz monaural causal TF-GridNet, 1,875,883 parameters, with
+  explicit recurrent/attention/ISTFT state;
+- weight license: CC BY-NC-ND 4.0 according to the Hugging Face repository
+  metadata. The GitHub code repository has no root license, so this remains a
+  local research probe and is not cleared for distribution.
+
+This model uses a different registration contract: a positive enrollment where
+the target is speaking and a negative enrollment from the same environment where
+the target is silent. It is not a drop-in persistent voiceprint model.
+
+The recovery priority for the missing v3 artifact is also lower than previously
+recorded. AmphionRuntime's independent
+[causal TSE landscape and evaluation](https://github.com/amphionspace/AmphionRuntime/blob/main/docs/speaker/CAUSAL_TSE_MODEL_LANDSCAPE_20260806.md)
+reports that the v3 checkpoint leaked the complete interferer in its
+target-absent case, produced non-finite output on silence, and had 83.33% CER on
+its controlled target-present case. Those results are not a substitute for our
+own artifact verification, but they are sufficient evidence not to spend more
+time trying to recover a now-private checkpoint before testing an accessible
+alternative.
+
+The deterministic Mac A CPU probe found:
+
+| Check | Result |
+| --- | --- |
+| 60 s, 256 samples / 16 ms, 2 threads | RTF 0.555; call p50/p95/max 8.69/9.68/31.20 ms |
+| length/state/repeatability | 960,000 samples in/out; finite state; identical rerun |
+| exact-zero input | failed: all 256 output samples were non-finite |
+| whole vs 256-sample chunks | failed exact parity; max/mean absolute delta 0.0229/0.00545 |
+| official four examples, whole input | SI-SDR 7.26–9.23 dB, close to the supplied outputs |
+| official four examples, 4096-sample chunks | SI-SDR 5.92–8.53 dB |
+
+The official examples establish that the checkpoint and invocation are correct.
+The remaining chunk discrepancy is real: the upstream input STFT does not expose
+its waveform overlap as session state, and normalization is applied independently
+to each call. A deterministic zero-input bypass could prevent NaNs, but it would
+not repair extraction quality or make the missing front-end state disappear.
+
+The private Mac B recording gate used the independent 60-second enrollment and
+the existing normal/quiet 0/-6/-12 dB mixtures. To honor this model's contract,
+the positive enrollment combined a high-energy three-second target segment with
+the same public interferer, while the negative enrollment contained that
+interferer without the target. No private audio, embedding, output or transcript
+was added to Git. With 4096-sample / 256 ms causal chunks:
+
+| Voice | 0 dB SI-SDRi | -6 dB SI-SDRi | -12 dB SI-SDRi | target-absent attenuation |
+| --- | ---: | ---: | ---: | ---: |
+| normal | **-3.42 dB** | +5.23 dB | +11.14 dB | 31.27 dB |
+| quiet | **-3.19 dB** | +3.40 dB | +9.48 dB | 31.27 dB |
+
+The alternative, simpler enrollment construction (clean target positive;
+interferer-only negative) also failed, including -8.32 dB and -3.68 dB SI-SDRi
+for the two 0 dB cases. The model therefore stops at `QUALITY_FAIL`: both 0 dB
+cases regress, violating the fixed rule that no target-present case may have
+negative SI-SDRi. Its good target-absent attenuation and low RTF are useful
+signals, but cannot override that failure. BlackHole, Doubao, paced live use and
+Mac B benchmarking are not run for this checkpoint.
+
+Reproducible synthetic probing is implemented in
+`experiments/probe_posneg_tse.py`; its isolated environment is pinned in
+`experiments/requirements-posneg-tse.txt`. Sanitized JSON results remain outside
+Git under `codexworks/micforyou/runs/posneg-tse-20260919/`.
 
 The best paper fit is `penta2himajin/tse-conv-tasnet-48k` v3: causal 48 kHz waveform-to-waveform ONNX, 10 ms chunks, explicit state, 1.45 M parameters and CC BY 4.0. Its cached model card reports held-out-speaker SI-SDR of +8.55 dB. It is materially different from the earlier broken v1 export because v3 claims corrected EMA export and a speaker-disjoint split.
 
@@ -118,8 +197,9 @@ Before packaging, scan for private absolute paths and for `.wav`, `.flac`, `.m4a
 
 | Candidate | Current disposition | Reason |
 | --- | --- | --- |
-| `penta2himajin/tse-conv-tasnet-48k` v3 | blocked at source gate | best architectural fit, but artifact currently returns 404/401 and cannot be pinned |
-| REAL-TSE BSRNN CoreML | rejected for live path | fixed eight-second separator, non-causal BSRNN; minimum context already exceeds the latency budget |
+| `penta2himajin/tse-conv-tasnet-48k` v3 | blocked at source gate; do not prioritize recovery | artifact currently returns 404/401; an independent 2026-08 AmphionRuntime evaluation also reports target-present, target-absent and silence failures for v3 |
+| Positive/Negative Enrollment TSE, causal monaural | rejected at quality gate | source and Mac A runtime pass; normal/quiet 0 dB cases regress, exact silence is non-finite, and small-chunk parity fails |
+| REAL-TSE causal TFMap BSRNN | rejected for M1 live path | selected on controlled quality tests, but Dynamic INT8 failed correctness and corrected CoreML still had best RTF 1.052 on Mac B M1 |
 | ESPnet TD-SpeakerBeam LibriMix | rejected for live path | published config is non-causal and 8 kHz; not a bounded streaming candidate |
 | OpenSpeakerBeam-SS | previously rejected | full-sequence behavior, clipping and target-absent amplification in this project's earlier tests |
 | VoiceFilter-Lite | incompatible output contract | filters ASR features and does not provide the waveform required by BlackHole -> Doubao |
@@ -129,4 +209,11 @@ Ordinary noise suppressors such as DeepFilterNet remain out of scope as substitu
 
 ## Resume trigger
 
-Resume model work when the v3 files reappear at a stable pinned revision, the owner publishes an equivalent permanent artifact, or another causal waveform TSE with usable weights satisfies the source gate. Prefer a cheap model-load probe on Mac A when the files are available there. If only the physically isolated Mac B has the complete artifacts and private recordings, its Agent may execute the one-shot gated handoff above; it must not cross a failed gate.
+Resume model integration when a new causal waveform TSE with usable pinned
+weights satisfies the source gate. Reappearance of the old v3 files alone is no
+longer sufficient because independent quality evidence is negative; it would
+need a materially revised checkpoint and fresh provenance. Prefer a cheap model
+load and synthetic probe on Mac A, then run the private-recording quality gate on
+Mac A before involving Mac B. If only the physically isolated Mac B has the
+complete artifacts and private recordings, its Agent may execute the one-shot
+gated handoff above; it must not cross a failed gate.
