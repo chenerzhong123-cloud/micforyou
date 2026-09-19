@@ -1,6 +1,6 @@
 # Stage C — causal core and real-time bridge
 
-Status: `PARTIAL PASS`. The causal/stateful core and fault-silence behavior pass engineering checks, and Mac A completed live bridge runs, but interactive 30-minute use exposed CoreAudio stalls and load-induced overflow. Mac B's second wired-headset set passes offline extraction, while its complete PyTorch thread sweep and ONNX Runtime CPU benchmark both fail the real-time gate. End-to-end p95, stable interactive 30-minute operation, and complete physical fault drills remain unresolved.
+Status: `PARTIAL PASS`. Mac A's personalized 6-second FP32 ONNX path now passes stateful correctness, a 30-minute physical-device/Doubao run, bounded bridge p95, and the direct-microphone tail A/B. The latest 30-minute run had no fault, callback stall, stream status, recovery or passthrough. True speech-to-text end-to-end stopwatch p95 and detachable-headset unplug/replug remain unresolved. Mac B's offline effect passes, but its measured PyTorch/ORT/CoreML runtimes still fail the real-time gate.
 
 ## Why the model is actually streamable
 
@@ -30,10 +30,10 @@ The complete file-driven bridge path was also exercised with 10 ms / 480-sample 
 - callbacks that only enqueue input and drain output;
 - worker-thread 48 kHz → 16 kHz resampling, stateful TSE, and 16 kHz → 48 kHz resampling;
 - bounded queues and continuous stereo output clock;
-- fault-silence on overflow or inference error, never raw-mic fallback;
+- bounded same-route recovery on overflow, inference error or callback stall; terminal `silence` by default, with explicit continuity-first raw passthrough as a non-default policy;
 - local metrics for callback status, queue depth, underrun and model-call p50/p95/max.
 
-It requires an explicit model-frame chunk value chosen from a local benchmark. It deliberately does not select a fallback microphone and has not been live-run without the everyday headset.
+It requires an explicit model-frame chunk value chosen from a local benchmark. It deliberately does not select a fallback microphone. The latest Mac A acceptance used the built-in `MacBook Air Microphone`; headset-specific results must be revalidated when a detachable device is available.
 
 ## Why there is no silent chunk default
 
