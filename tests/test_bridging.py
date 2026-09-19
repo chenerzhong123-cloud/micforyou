@@ -61,6 +61,31 @@ def test_engine_streams_identity_and_flushes_tail() -> None:
     assert np.isfinite(total).all()
 
 
+def test_engine_waits_for_explicit_output_prefill() -> None:
+    engine = BridgeEngine(
+        identity_transform,
+        lambda: np.empty(0, dtype=np.float32),
+        input_bound_blocks=8,
+        ring_maximum_frames=480,
+        output_prefill_frames=96,
+    )
+    assert engine.submit(np.ones(48, dtype=np.float32))
+    deadline = time.monotonic() + 2
+    while engine.output_ring.available() < 48 and time.monotonic() < deadline:
+        time.sleep(0.001)
+    output, written = engine.write_output(48)
+    assert written == 0
+    np.testing.assert_array_equal(output, np.zeros(48, dtype=np.float32))
+
+    assert engine.submit(np.full(48, 0.5, dtype=np.float32))
+    while engine.output_ring.available() < 96 and time.monotonic() < deadline:
+        time.sleep(0.001)
+    output, written = engine.write_output(48)
+    assert written == 48
+    np.testing.assert_array_equal(output, np.ones(48, dtype=np.float32))
+    assert engine.finish(timeout=2)
+
+
 def test_engine_model_exception_latches_fault_and_outputs_silence() -> None:
     def exploding(block: np.ndarray) -> np.ndarray:
         if np.max(block) > 0.5:
@@ -100,7 +125,8 @@ def test_engine_input_overflow_latches_fault_not_passthrough() -> None:
 
     engine = BridgeEngine(
         slow,
-        lambda: np.empty(0, dtype=np.float32),
+        # A latched fault must suppress even a non-empty model tail.
+        lambda: np.ones(48, dtype=np.float32),
         input_bound_blocks=4,
         ring_maximum_frames=48,
     )
@@ -114,6 +140,9 @@ def test_engine_input_overflow_latches_fault_not_passthrough() -> None:
     assert written == 0
     np.testing.assert_array_equal(samples, np.zeros(48, dtype=np.float32))
     assert engine.errors  # overflow reported, whichever bound tripped first
+    assert engine.finish(timeout=5)
+    assert engine.output_ring.available() == 0
+    assert engine.errors == ["input queue exceeded its bound"]
 
 
 def test_engine_output_overflow_faults_silently() -> None:

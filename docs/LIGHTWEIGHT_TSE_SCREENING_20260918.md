@@ -32,6 +32,8 @@ load/state correctness
 
 No user recording, enrollment vector, model weight or transcript is committed to Git.
 
+Mac A may complete the post-source correctness, private-recording quality and bridge stress work before Mac B is available. Cross-machine stress uses the [runtime-envelope harness](MAC_A_RUNTIME_ENVELOPE.md), not CPU throttling, and never replaces the final real M1 benchmark.
+
 ## One-shot Mac B handoff after the artifact becomes available
 
 The source block does not require two separate Mac B assignments. Once the exact model files and the compatible enrollment encoder are locally available, give this whole section to the Mac B Agent. It must run the phases in order and continue automatically only when the preceding gate passes. A small file size is a reason to expect a cheaper runtime, not evidence that runtime or extraction quality passes.

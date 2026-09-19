@@ -70,6 +70,12 @@ benchmark 看不到实时队列动态。Mac A 实测：16-frame benchmark RTF 0.
 
 拒绝启用不是失败：输出静音、不透传原始麦克风是本项目的强制安全语义，宁可不跑也不带病运行。
 
+## 跨机器压力包络，不是 CPU 仿真
+
+当目标机器暂时不可用时，可以在开发机运行 `experiments/simulate_runtime_envelope.py`，对 10 ms cadence 注入确定性的 nominal/boundary/overload service-time 分布，验证队列、prefill、延迟累积、overflow 和故障静音。该结果只说明 bridge 在该耗时包络下的行为，不能写成 M1 benchmark。完整方法和当前 Mac A 结果见 [Mac A runtime envelope](MAC_A_RUNTIME_ENVELOPE.md)。
+
+新模型接入后，必须把同一个 `DelayEnvelope` 包在真实 transform 外面；synthetic identity 运行只能验证 harness。最终目标机器仍需运行至少一次真实模型 benchmark。
+
 ## Mac A 结果快照（2026-09-15，AC 电源，负载约 3.5）
 
 **Mac A 已验证**：benchmark 与建议函数可重复运行（fast/8，核心估计 121.5 ms）；配速延迟 8f p95 202 ms、16f p95 341/341 ms、24f p95 381/430 ms；故障静音语义有单元测试覆盖；30 分钟 16f 模拟 soak 见 STAGE_C。BlackHole 自动回采当前失效（9-13 正常、9-15 静音），已列为环境项。

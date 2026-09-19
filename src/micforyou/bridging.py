@@ -173,16 +173,23 @@ class BridgeEngine:
         *,
         input_bound_blocks: int,
         ring_maximum_frames: int,
+        output_prefill_frames: int = 0,
         name: str = "micforyou-bridge",
     ):
         if input_bound_blocks < 1:
             raise ValueError("input_bound_blocks must be positive")
+        if output_prefill_frames < 0 or output_prefill_frames > ring_maximum_frames:
+            raise ValueError(
+                "output_prefill_frames must be between zero and ring_maximum_frames"
+            )
         self.transform = transform
         self.flush_transform = flush_transform
         self.input_queue: queue.Queue[np.ndarray | None] = queue.Queue(
             maxsize=input_bound_blocks
         )
         self.output_ring = AudioRing(ring_maximum_frames)
+        self.output_prefill_frames = output_prefill_frames
+        self.output_started = output_prefill_frames == 0
         self.fault = threading.Event()
         self.worker_done = threading.Event()
         self.errors: list[str] = []
@@ -197,10 +204,16 @@ class BridgeEngine:
                 block = self.input_queue.get()
                 if block is None:
                     break
+                if self.fault.is_set():
+                    break
                 self.input_queue_max = max(self.input_queue_max, self.input_queue.qsize())
-                self._emit(self.transform(block))
+                output = self.transform(block)
+                if self.fault.is_set():
+                    break
+                self._emit(output)
                 self.blocks_processed += 1
-            self._emit(self.flush_transform())
+            if not self.fault.is_set():
+                self._emit(self.flush_transform())
         except Exception as error:  # fault-silence: never propagate raw audio
             self.errors.append(repr(error))
             self.fault.set()
@@ -229,15 +242,25 @@ class BridgeEngine:
         """Fill one output callback block; silence on fault or empty ring."""
         if self.fault.is_set():
             return np.zeros(frames, dtype=np.float32), 0
+        if not self.output_started:
+            if self.output_ring.available() < self.output_prefill_frames:
+                return np.zeros(frames, dtype=np.float32), 0
+            self.output_started = True
         return self.output_ring.pop(frames)
 
     def finish(self, timeout: float = 30.0) -> bool:
         """Stop capture, drain the chain, and wait for the worker."""
-        if not self.fault.is_set():
+        if self.worker_done.is_set():
+            return True
+        if self.fault.is_set():
+            return bool(self.worker_done.wait(timeout=timeout))
+        try:
+            self.input_queue.put_nowait(None)
+        except queue.Full:
             try:
-                self.input_queue.put_nowait(None)
-            except queue.Full:
                 self.input_queue.put(None, timeout=timeout)
+            except queue.Full:
+                return self.worker_done.is_set()
         done = self.worker_done.wait(timeout=timeout)
         return bool(done)
 
@@ -247,6 +270,8 @@ class BridgeEngine:
             "errors": list(self.errors),
             "input_queue_max_blocks": self.input_queue_max,
             "output_queue_max_frames": self.output_ring.maximum_observed,
+            "output_prefill_frames": self.output_prefill_frames,
+            "output_started": self.output_started,
             "blocks_processed": self.blocks_processed,
         }
 
