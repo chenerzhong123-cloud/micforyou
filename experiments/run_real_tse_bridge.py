@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import resource
 import sys
 import threading
 import time
@@ -287,6 +288,8 @@ def main() -> None:
     maximum_frames = round(sample_rate * args.queue_ms / 1000)
     prefill_frames = round(sample_rate * args.prefill_ms / 1000)
     started = time.monotonic()
+    usage_started = resource.getrusage(resource.RUSAGE_SELF)
+    cpu_seconds_started = usage_started.ru_utime + usage_started.ru_stime
     deadline = started + args.duration if args.duration > 0 else None
     attempts: list[dict] = []
     all_call_ms: list[float] = []
@@ -498,6 +501,10 @@ def main() -> None:
         }
 
     elapsed = time.monotonic() - started
+    usage_ended = resource.getrusage(resource.RUSAGE_SELF)
+    cpu_seconds = (
+        usage_ended.ru_utime + usage_ended.ru_stime - cpu_seconds_started
+    )
     values = np.asarray(all_call_ms, dtype=np.float64)
     final_attempt = attempts[-1]
     recovered_faults = sum(attempt["recovery_planned"] for attempt in attempts)
@@ -540,6 +547,13 @@ def main() -> None:
         "model_sha256": sha256(args.model_dir / "avg_model.pt"),
         "onnx_sha256": sha256(args.onnx) if args.onnx is not None else None,
         "elapsed_seconds": elapsed,
+        "process_resources": {
+            "cpu_seconds": cpu_seconds,
+            "mean_cpu_percent_one_core": (
+                cpu_seconds / elapsed * 100 if elapsed > 0 else None
+            ),
+            "peak_rss_bytes": usage_ended.ru_maxrss,
+        },
         "callback_count": sum(attempt["callback_count"] for attempt in attempts)
         + (passthrough_report["callback_count"] if passthrough_report else 0),
         "model_call_count": len(all_call_ms),

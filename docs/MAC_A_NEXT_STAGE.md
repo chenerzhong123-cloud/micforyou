@@ -15,9 +15,9 @@
 2. **有限自动恢复与熔断——代码完成，待真实瞬时故障回归**：Controller 对块处理、队列和 callback 故障先静音，关闭旧 stream、清空音频并重建模型流状态，再显式重开原来的输入与 BlackHole 输出；5 分钟内默认最多恢复 2 次，继续失败则锁定 FAULT。禁止换麦和原声透传。本项不需要用户录音。
 3. **修复停止与 drain 边界——代码完成，待真实回归**：避免停止录音时的输出 ring 突增、队列溢出或尾音被内部丢弃；用模拟负载和自动测试验证。本项不需要用户操作。
 4. **Mac A 120 秒回归——ONNX 工程回归通过，用户语音待测**：`8 frames + 1 ORT thread + 100 ms prefill + 6 秒 enrollment` 完成真实设备回归；本人语音与豆包交互留到下一项集中验证。
-5. **Mac A 30 分钟豆包交互验收——下一项**：运行期间多次启停豆包语音，确认不再无提示断流；记录 CPU、内存、p95 延迟、underrun 和恢复次数。需要用户集中操作豆包。
-6. **句尾 A/B**：同样三句话分别用物理麦克风直连豆包、以及 REAL-TSE → BlackHole 输入豆包，区分豆包 endpointing 与本链路造成的尾字缺失。需要用户集中朗读和复制结果。
-7. **物理故障演练**：拔插耳机、临时设备不可用、推理异常、暂停/恢复；验收静音、错误提示、不自动换麦和不覆盖用户设置。需要用户集中拔插一次设备。
+5. **Mac A 30 分钟豆包交互验收——通过**：ONNX 链路连续完成 1800.67 秒；三次豆包启停均有完整文字。工程指标见下文。
+6. **句尾 A/B——通过**：物理麦克风与 TSE/BlackHole 均保留首字和最后的“尾音”；两边都出现豆包的标点与“停止录音时”措辞变化，没有 TSE 新增截尾证据。
+7. **物理故障演练——部分完成**：推理异常、队列故障、恢复熔断和可选 passthrough 已自动验证；当前没有可拔插耳机，真实设备拔插仍待后续补测。
 8. **Stage C 判定**：汇总 AT-07～AT-10。达到标准才改为 `PASS`；否则保留具体失败项，不用界面包装。
 9. **进入 Stage D**：提供最小启停、暂停、设备选择、重新注册、状态/错误、恢复原输入和卸载说明；不申请 Accessibility，不实现 ASR。
 10. **后续性能升级轨道**：在稳定接口后替换/增加 TSE Adapter 和 runtime profile，按每台设备先 benchmark 再选 backend/chunk；Mac B 重新从质量门和实时门开始，不把 Mac A 参数直接外推。
@@ -40,7 +40,9 @@
 
 旧 PyTorch 候选在 900 秒内失败，已由 ONNX 候选替代。6 秒个性化 FP32 ONNX 的 100 块 Torch 对照 PASS；120 秒真实设备运行保持 `final_mode=tse`，模型 p95 `29.29 ms`、bridge p95 `260.16 ms`、输入队列峰值 3 blocks，且没有 fault、恢复、stream status 或 passthrough。
 
-同配置 15 分钟稳态测试也保持 `final_mode=tse`，模型 p95 `29.24 ms`、bridge p95 `260.17 ms`、输入队列峰值 6/50 blocks，无 fault、恢复或 passthrough。前后半段 5 秒采样的输入队列均值为 0.422/0.427 blocks，output ring 均值为 6447/6436 frames，没有持续增长。CoreAudio 报告了 2 次 `input overflow`，因此这是带有两次已报告输入不连续的工程稳定通过，不等于 AT-09 完全通过。下一项是 30 分钟豆包交互、句尾 A/B 和物理故障演练。运行 JSON 位于 `/Users/deuce/claudeproject/codexworks/micforyou/runs/`，不纳入 Git。
+同配置 15 分钟稳态测试也保持 `final_mode=tse`，模型 p95 `29.24 ms`、bridge p95 `260.17 ms`、输入队列峰值 6/50 blocks，无 fault、恢复或 passthrough。前后半段 5 秒采样的输入队列均值为 0.422/0.427 blocks，output ring 均值为 6447/6436 frames，没有持续增长。CoreAudio 报告了 2 次 `input overflow`，因此当时只判为带有两次已报告输入不连续的工程稳定通过。运行 JSON 位于 `/Users/deuce/claudeproject/codexworks/micforyou/runs/`，不纳入 Git。
+
+30 分钟豆包验收随后完成：`final_mode=tse`，无 fault、恢复、callback stall、stream status 或 passthrough；模型 p95 `29.21 ms`，bridge p95 `260.17 ms`，输入队列峰值 8/50 blocks，平均占单核 `42.50%`，峰值 RSS `1,028,014,080 bytes`。三次 TSE/BlackHole 豆包启停和一次物理麦克风基线都保留句首、句尾“尾音”；仅有相同类型的标点/措辞整理。AT-08 与 Mac A 的 AT-09 因此通过。下一项只剩真实耳机拔插 AT-10；没有耳机时不阻塞其他产品开发，但 Stage C 暂维持 `PARTIAL PASS`。
 
 故障恢复 SLA 已补充：一次异常不会永久毒化整段会话。直接跳过坏块并沿用旧状态不安全，因此恢复单位是整个流式 pipeline；恢复期间输出静音并丢弃过期音频，之后继续当前会话。故障注入使用 50 ms ring 连续制造 overload，验证了两次自动恢复和第三次熔断，报告 `faults_recovered=2`、`total_rejected=1`。
 
