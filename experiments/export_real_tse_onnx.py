@@ -33,6 +33,8 @@ import torch
 import torchaudio
 from torch import nn
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 
 class StatefulTSECore(nn.Module):
     """Real-arithmetic, stateful chunk core of the causal REAL-TSE model.
@@ -153,6 +155,7 @@ def main() -> None:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--enrollment", type=Path, required=True)
+    parser.add_argument("--enrollment-seconds", type=float, default=6.0)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--opset", type=int, default=17)
@@ -181,6 +184,11 @@ def main() -> None:
         enrollment = torchaudio.functional.resample(
             enrollment, enrollment_rate, extractor.resample_rate
         )
+    from micforyou.runtime import select_enrollment_window
+
+    enrollment, enrollment_selection = select_enrollment_window(
+        enrollment, int(extractor.resample_rate), args.enrollment_seconds
+    )
     with torch.inference_mode():
         conditioning = precompute_conditioning(model, enrollment)
 
@@ -235,7 +243,10 @@ def main() -> None:
         frames = args.static_frames
         example = build_example_inputs(model, conditioning, frames)
     else:
-        dynamic_axes = {"spec_ri": {3: "frames"}, "est_ri": {4: "frames"}}
+        dynamic_axes = {
+            "spec_ri": {3: "frames"},
+            "est_ri": {4: "frames"},
+        }
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with torch.inference_mode():
@@ -263,6 +274,7 @@ def main() -> None:
             (args.model_dir / "avg_model.pt").read_bytes()
         ).hexdigest(),
         "enrollment": "<local-private-audio>",
+        "enrollment_selection": enrollment_selection,
         "opset": args.opset,
         "onnx_checker": "PASS",
         "onnx_file": args.output.name,

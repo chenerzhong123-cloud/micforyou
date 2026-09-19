@@ -24,6 +24,20 @@ Transform = Callable[[np.ndarray], np.ndarray]
 FlushTransform = Callable[[], np.ndarray]
 
 
+def mono_to_stereo_passthrough(audio: np.ndarray, frames: int) -> np.ndarray:
+    """Render an explicit raw-microphone fallback block for BlackHole 2ch."""
+    value = np.asarray(audio, dtype=np.float32)
+    if value.ndim == 2:
+        if value.shape[1] < 1:
+            raise ValueError("passthrough input must have at least one channel")
+        mono = value[:frames, 0]
+    else:
+        mono = value.reshape(-1)[:frames]
+    if len(mono) != frames:
+        raise ValueError("passthrough input does not contain the requested frames")
+    return np.repeat(mono[:, None], 2, axis=1)
+
+
 class AudioRing:
     """Bounded FIFO of mono float32 blocks; overflow clears instead of growing."""
 
@@ -35,26 +49,55 @@ class AudioRing:
         self.maximum_observed = 0
         self.total_popped = 0
         self.lock = threading.Lock()
+        self._space_available = threading.Condition(self.lock)
 
     def push(self, audio: np.ndarray) -> bool:
         value = np.asarray(audio, dtype=np.float32).reshape(-1)
         if not len(value):
             return True
-        with self.lock:
+        with self._space_available:
             if self.frames + len(value) > self.maximum_frames:
                 self.blocks.clear()
                 self.offset = 0
                 self.frames = 0
+                self._space_available.notify_all()
                 return False
             self.blocks.append(value)
             self.frames += len(value)
             self.maximum_observed = max(self.maximum_observed, self.frames)
         return True
 
+    def push_wait(
+        self,
+        audio: np.ndarray,
+        *,
+        timeout: float,
+        abort: threading.Event | None = None,
+    ) -> bool:
+        """Push after bounded backpressure without exceeding the ring bound."""
+        value = np.asarray(audio, dtype=np.float32).reshape(-1)
+        if not len(value):
+            return True
+        if len(value) > self.maximum_frames:
+            return False
+        deadline = time.monotonic() + timeout
+        with self._space_available:
+            while self.frames + len(value) > self.maximum_frames:
+                if abort is not None and abort.is_set():
+                    return False
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._space_available.wait(timeout=remaining)
+            self.blocks.append(value)
+            self.frames += len(value)
+            self.maximum_observed = max(self.maximum_observed, self.frames)
+            return True
+
     def pop(self, count: int) -> tuple[np.ndarray, int]:
         result = np.zeros(count, dtype=np.float32)
         written = 0
-        with self.lock:
+        with self._space_available:
             while written < count and self.blocks:
                 block = self.blocks[0]
                 take = min(count - written, len(block) - self.offset)
@@ -65,17 +108,20 @@ class AudioRing:
                 if self.offset == len(block):
                     self.blocks.popleft()
                     self.offset = 0
+            if written:
+                self._space_available.notify_all()
         self.total_popped += written
         return result, written
 
     def clear(self) -> None:
-        with self.lock:
+        with self._space_available:
             # Samples removed by clear() never reach the output; keep the
             # popped counter aligned with emitted audio positions.
             self.total_popped += self.frames
             self.blocks.clear()
             self.offset = 0
             self.frames = 0
+            self._space_available.notify_all()
 
     def available(self) -> int:
         with self.lock:
@@ -157,6 +203,98 @@ class LatencyLedger:
         }
 
 
+class CallbackLivenessMonitor:
+    """Detect a device stream whose audio callbacks stop advancing.
+
+    ``observe`` is intentionally tiny so it can run in the audio callback.
+    The controller calls ``check`` from its normal supervision loop; this
+    class does not own a thread and never tries to reopen a device itself.
+    """
+
+    def __init__(self, timeout_seconds: float, *, started_at: float | None = None):
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        self.timeout_seconds = timeout_seconds
+        self.started_at = time.monotonic() if started_at is None else started_at
+        self.last_callback_at: float | None = None
+        self.callback_count = 0
+        self.stall_count = 0
+        self._stalled = False
+        self._lock = threading.Lock()
+
+    def observe(self, now: float | None = None) -> None:
+        observed_at = time.monotonic() if now is None else now
+        with self._lock:
+            self.last_callback_at = observed_at
+            self.callback_count += 1
+            self._stalled = False
+
+    def check(self, now: float | None = None) -> float | None:
+        """Return callback age when newly stalled, otherwise ``None``."""
+        checked_at = time.monotonic() if now is None else now
+        with self._lock:
+            reference = self.last_callback_at
+            if reference is None:
+                reference = self.started_at
+            age = checked_at - reference
+            if age <= self.timeout_seconds or self._stalled:
+                return None
+            self._stalled = True
+            self.stall_count += 1
+            return age
+
+    def stats(self, now: float | None = None) -> dict:
+        checked_at = time.monotonic() if now is None else now
+        with self._lock:
+            reference = self.last_callback_at
+            age = None if reference is None else max(0.0, checked_at - reference)
+            return {
+                "timeout_seconds": self.timeout_seconds,
+                "callback_count": self.callback_count,
+                "stall_count": self.stall_count,
+                "last_callback_age_seconds": age,
+            }
+
+
+class RecoveryCircuitBreaker:
+    """Bound automatic recovery attempts within a rolling time window."""
+
+    def __init__(self, maximum_recoveries: int, window_seconds: float):
+        if maximum_recoveries < 0:
+            raise ValueError("maximum_recoveries must be non-negative")
+        if window_seconds <= 0:
+            raise ValueError("window_seconds must be positive")
+        self.maximum_recoveries = maximum_recoveries
+        self.window_seconds = window_seconds
+        self._recoveries: deque[float] = deque()
+        self.total_allowed = 0
+        self.total_rejected = 0
+
+    def allow(self, now: float | None = None) -> bool:
+        checked_at = time.monotonic() if now is None else now
+        cutoff = checked_at - self.window_seconds
+        while self._recoveries and self._recoveries[0] <= cutoff:
+            self._recoveries.popleft()
+        if len(self._recoveries) >= self.maximum_recoveries:
+            self.total_rejected += 1
+            return False
+        self._recoveries.append(checked_at)
+        self.total_allowed += 1
+        return True
+
+    def stats(self, now: float | None = None) -> dict:
+        checked_at = time.monotonic() if now is None else now
+        cutoff = checked_at - self.window_seconds
+        active = sum(timestamp > cutoff for timestamp in self._recoveries)
+        return {
+            "maximum_recoveries": self.maximum_recoveries,
+            "window_seconds": self.window_seconds,
+            "recoveries_in_window": active,
+            "total_allowed": self.total_allowed,
+            "total_rejected": self.total_rejected,
+        }
+
+
 class BridgeEngine:
     """Bounded queues plus a worker thread around an injectable DSP chain.
 
@@ -195,6 +333,8 @@ class BridgeEngine:
         self.errors: list[str] = []
         self.input_queue_max = 0
         self.blocks_processed = 0
+        self._fault_lock = threading.Lock()
+        self._finishing = threading.Event()
         self._thread = threading.Thread(target=self._worker, name=name, daemon=True)
         self._thread.start()
 
@@ -215,14 +355,20 @@ class BridgeEngine:
             if not self.fault.is_set():
                 self._emit(self.flush_transform())
         except Exception as error:  # fault-silence: never propagate raw audio
-            self.errors.append(repr(error))
-            self.fault.set()
-            self.output_ring.clear()
+            self.latch_fault(repr(error))
         finally:
             self.worker_done.set()
 
     def _emit(self, value: np.ndarray) -> None:
-        if len(value) and not self.output_ring.push(value):
+        if not len(value):
+            return
+        if self._finishing.is_set():
+            accepted = self.output_ring.push_wait(
+                value, timeout=2.0, abort=self.fault
+            )
+        else:
+            accepted = self.output_ring.push(value)
+        if not accepted:
             raise RuntimeError("output queue exceeded its bound")
 
     def submit(self, block: np.ndarray) -> bool:
@@ -232,11 +378,29 @@ class BridgeEngine:
         try:
             self.input_queue.put_nowait(block)
         except queue.Full:
-            self.errors.append("input queue exceeded its bound")
-            self.fault.set()
-            self.output_ring.clear()
+            self.latch_fault("input queue exceeded its bound")
             return False
         return True
+
+    def latch_fault(self, reason: str) -> bool:
+        """Latch fault-silence and wake an idle worker.
+
+        Returns ``True`` only for the first caller that transitions the engine
+        into FAULT. This is also the safe entry point for controller/device
+        failures such as a stalled CoreAudio callback.
+        """
+        with self._fault_lock:
+            if self.fault.is_set():
+                return False
+            self.errors.append(reason)
+            self.fault.set()
+            self.output_ring.clear()
+            try:
+                self.input_queue.put_nowait(None)
+            except queue.Full:
+                # A busy worker will observe ``fault`` after its current block.
+                pass
+            return True
 
     def write_output(self, frames: int) -> tuple[np.ndarray, int]:
         """Fill one output callback block; silence on fault or empty ring."""
@@ -254,6 +418,7 @@ class BridgeEngine:
             return True
         if self.fault.is_set():
             return bool(self.worker_done.wait(timeout=timeout))
+        self._finishing.set()
         try:
             self.input_queue.put_nowait(None)
         except queue.Full:

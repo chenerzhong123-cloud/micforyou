@@ -130,6 +130,12 @@ def main() -> None:
         default=None,
         help="override the thread count after wesep import (upstream sets it to 1)",
     )
+    parser.add_argument(
+        "--torch-interop-threads",
+        type=int,
+        default=None,
+        help="limit PyTorch operator-level scheduling threads before model load",
+    )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--tir-db", type=float, default=-6.0)
     parser.add_argument("--result", type=Path, required=True)
@@ -141,13 +147,18 @@ def main() -> None:
         raise SystemExit("--audio-seconds must be >= 5 for stable percentiles")
     if args.torch_threads is not None and args.torch_threads < 1:
         raise SystemExit("--torch-threads must be >= 1")
+    if args.torch_interop_threads is not None and args.torch_interop_threads < 1:
+        raise SystemExit("--torch-interop-threads must be >= 1")
 
     sys.path.insert(0, str(args.repo))
     import wesep  # noqa: PLC0415
 
     upstream_torch_threads = torch.get_num_threads()
+    upstream_torch_interop_threads = torch.get_num_interop_threads()
     if args.torch_threads is not None:
         torch.set_num_threads(args.torch_threads)
+    if args.torch_interop_threads is not None:
+        torch.set_num_interop_threads(args.torch_interop_threads)
 
     extractor = wesep.load_model_local(str(args.model_dir))
     model = extractor.model.eval()
@@ -199,7 +210,9 @@ def main() -> None:
         {
             "torch": torch.__version__,
             "torch_threads": torch.get_num_threads(),
+            "torch_interop_threads": torch.get_num_interop_threads(),
             "upstream_torch_threads": upstream_torch_threads,
+            "upstream_torch_interop_threads": upstream_torch_interop_threads,
             "benchmark_host_note": "single-host snapshot; results are not transferable",
         }
     )

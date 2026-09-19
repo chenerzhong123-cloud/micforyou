@@ -1,3 +1,4 @@
+import threading
 import time
 
 import numpy as np
@@ -6,13 +7,29 @@ import pytest
 from micforyou.bridging import (
     AudioRing,
     BridgeEngine,
+    CallbackLivenessMonitor,
     LatencyLedger,
+    RecoveryCircuitBreaker,
+    mono_to_stereo_passthrough,
     sleep_until,
 )
 
 
 def identity_transform(block: np.ndarray) -> np.ndarray:
     return np.asarray(block, dtype=np.float32).copy()
+
+
+def test_explicit_passthrough_duplicates_mono_without_gain_change() -> None:
+    mono = np.asarray([[0.25], [-0.5], [0.75]], dtype=np.float32)
+    stereo = mono_to_stereo_passthrough(mono, frames=3)
+    assert stereo.shape == (3, 2)
+    np.testing.assert_array_equal(stereo[:, 0], mono[:, 0])
+    np.testing.assert_array_equal(stereo[:, 1], mono[:, 0])
+
+
+def test_explicit_passthrough_rejects_short_input() -> None:
+    with pytest.raises(ValueError, match="requested frames"):
+        mono_to_stereo_passthrough(np.ones((2, 1), dtype=np.float32), frames=3)
 
 
 def test_ring_preserves_order_and_bounded_overflow_clears() -> None:
@@ -33,6 +50,26 @@ def test_ring_preserves_order_and_bounded_overflow_clears() -> None:
     ring.push(np.ones(5, dtype=np.float32))
     ring.pop(5)
     assert ring.total_popped == 45
+
+
+def test_ring_bounded_wait_allows_output_to_make_space() -> None:
+    ring = AudioRing(maximum_frames=100)
+    assert ring.push(np.ones(80, dtype=np.float32))
+    result: list[bool] = []
+
+    thread = threading.Thread(
+        target=lambda: result.append(
+            ring.push_wait(np.full(40, 0.5, dtype=np.float32), timeout=1)
+        )
+    )
+    thread.start()
+    time.sleep(0.02)
+    assert thread.is_alive()
+    _, written = ring.pop(30)
+    assert written == 30
+    thread.join(timeout=1)
+    assert result == [True]
+    assert ring.available() == 90
 
 
 def test_engine_streams_identity_and_flushes_tail() -> None:
@@ -59,6 +96,31 @@ def test_engine_streams_identity_and_flushes_tail() -> None:
     # 100 blocks * 48 samples plus the 7-sample flush tail all arrive.
     assert len(total) == 100 * 48 + 7
     assert np.isfinite(total).all()
+
+
+def test_engine_finish_backpressures_tail_while_output_drains() -> None:
+    engine = BridgeEngine(
+        identity_transform,
+        lambda: np.ones(60, dtype=np.float32),
+        input_bound_blocks=8,
+        ring_maximum_frames=100,
+    )
+    assert engine.submit(np.ones(80, dtype=np.float32))
+    deadline = time.monotonic() + 1
+    while engine.output_ring.available() < 80 and time.monotonic() < deadline:
+        time.sleep(0.001)
+
+    finished: list[bool] = []
+    thread = threading.Thread(target=lambda: finished.append(engine.finish(timeout=2)))
+    thread.start()
+    time.sleep(0.02)
+    assert thread.is_alive()
+    _, written = engine.write_output(60)
+    assert written == 60
+    thread.join(timeout=2)
+    assert finished == [True]
+    assert not engine.fault.is_set()
+    assert engine.output_ring.available() == 80
 
 
 def test_engine_waits_for_explicit_output_prefill() -> None:
@@ -160,6 +222,54 @@ def test_engine_output_overflow_faults_silently() -> None:
     samples, written = engine.write_output(48)
     assert written == 0
     np.testing.assert_array_equal(samples, np.zeros(48, dtype=np.float32))
+
+
+def test_engine_external_fault_wakes_idle_worker_and_stays_silent() -> None:
+    engine = BridgeEngine(
+        identity_transform,
+        lambda: np.ones(48, dtype=np.float32),
+        input_bound_blocks=8,
+        ring_maximum_frames=480,
+    )
+    assert engine.latch_fault("audio callbacks stalled")
+    assert not engine.latch_fault("duplicate")
+    assert engine.finish(timeout=2)
+    output, written = engine.write_output(48)
+    assert written == 0
+    np.testing.assert_array_equal(output, np.zeros(48, dtype=np.float32))
+    assert engine.errors == ["audio callbacks stalled"]
+
+
+def test_callback_liveness_monitor_detects_each_stall_once() -> None:
+    monitor = CallbackLivenessMonitor(1.0, started_at=10.0)
+    assert monitor.check(now=10.9) is None
+    assert monitor.check(now=11.1) == pytest.approx(1.1)
+    assert monitor.check(now=12.0) is None
+    monitor.observe(now=12.1)
+    assert monitor.check(now=12.9) is None
+    assert monitor.check(now=13.2) == pytest.approx(1.1)
+    stats = monitor.stats(now=13.2)
+    assert stats["callback_count"] == 1
+    assert stats["stall_count"] == 2
+    assert stats["last_callback_age_seconds"] == pytest.approx(1.1)
+
+
+def test_recovery_circuit_breaker_limits_and_renews_window() -> None:
+    breaker = RecoveryCircuitBreaker(maximum_recoveries=2, window_seconds=60)
+    assert breaker.allow(now=100)
+    assert breaker.allow(now=120)
+    assert not breaker.allow(now=130)
+    assert breaker.allow(now=161)  # the recovery at t=100 has expired
+    stats = breaker.stats(now=161)
+    assert stats["recoveries_in_window"] == 2
+    assert stats["total_allowed"] == 3
+    assert stats["total_rejected"] == 1
+
+
+def test_recovery_circuit_breaker_can_disable_recovery() -> None:
+    breaker = RecoveryCircuitBreaker(maximum_recoveries=0, window_seconds=60)
+    assert not breaker.allow(now=10)
+    assert breaker.stats(now=10)["total_rejected"] == 1
 
 
 def test_ledger_computes_block_latency_distribution() -> None:

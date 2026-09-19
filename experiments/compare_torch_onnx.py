@@ -23,6 +23,8 @@ import numpy as np
 import torch
 import torchaudio
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 
 def relative_error(diff: np.ndarray, reference: np.ndarray) -> float:
     denominator = np.linalg.norm(reference)
@@ -34,6 +36,7 @@ def main() -> None:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--enrollment", type=Path, required=True)
+    parser.add_argument("--enrollment-seconds", type=float, default=6.0)
     parser.add_argument("--onnx", type=Path, required=True)
     parser.add_argument("--frames-per-chunk", type=int, default=8)
     parser.add_argument("--chunks", type=int, default=100)
@@ -65,6 +68,11 @@ def main() -> None:
         enrollment = torchaudio.functional.resample(
             enrollment, enrollment_rate, extractor.resample_rate
         )
+    from micforyou.runtime import select_enrollment_window
+
+    enrollment, enrollment_selection = select_enrollment_window(
+        enrollment, int(extractor.resample_rate), args.enrollment_seconds
+    )
     with torch.inference_mode():
         conditioning = precompute_conditioning(model, enrollment)
 
@@ -211,6 +219,7 @@ def main() -> None:
         "schema": "micforyou/onnx-correctness/1",
         "onnx_sha256": sha256(args.onnx),
         "checkpoint_sha256": sha256(args.model_dir / "avg_model.pt"),
+        "enrollment_selection": enrollment_selection,
         "onnx_inputs": sorted(input_names),
         "onnx_outputs": output_names,
         "single_chunk": single,

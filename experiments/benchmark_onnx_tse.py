@@ -34,7 +34,7 @@ import torchaudio
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from micforyou.reporting import collect_system_info
-from micforyou.runtime import ort_thread_settings
+from micforyou.runtime import ort_thread_settings, select_enrollment_window
 from micforyou.synth import DEFAULT_SEED, synthetic_blocks
 
 from probe_real_tse_stateful import (
@@ -214,6 +214,7 @@ def main() -> None:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--enrollment", type=Path, required=True)
+    parser.add_argument("--enrollment-seconds", type=float, default=6.0)
     parser.add_argument("--onnx", type=Path, required=True)
     parser.add_argument("--torch-baseline", type=Path, default=None,
                         help="thread-sweep JSON for speedup reference")
@@ -253,6 +254,9 @@ def main() -> None:
         enrollment = torchaudio.functional.resample(
             enrollment, enrollment_rate, extractor.resample_rate
         )
+    enrollment, enrollment_selection = select_enrollment_window(
+        enrollment, int(extractor.resample_rate), args.enrollment_seconds
+    )
     with torch.inference_mode():
         conditioning = precompute_conditioning(model, enrollment)
     layer_count = len(model.sep_model.separator.separation)
@@ -428,6 +432,7 @@ def main() -> None:
         "system": collect_system_info({"torch": torch.__version__}),
         "onnx_sha256": sha256(args.onnx),
         "checkpoint_sha256": sha256(args.model_dir / "avg_model.pt"),
+        "enrollment_selection": enrollment_selection,
         "provider": (
             "CoreMLExecutionProvider+CPUExecutionProvider"
             if args.provider == "coreml"

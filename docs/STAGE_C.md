@@ -179,3 +179,35 @@ After the headset is connected and enrollment is captured, substitute the detect
 `16` in this example is a starting probe only, not a final recommendation; change it only from a Mac B measurement.
 
 Do not mark Stage C passed until the end-to-end tests in SPEC.md AT-07 through AT-10 are complete.
+
+### Mac A reliability hardening (2026-09-19)
+
+The live bridge now detects a stopped CoreAudio callback clock, latches fault-silence, and exits promptly instead of sleeping until the requested duration. A callback-stall recovery may reopen the same explicit input/output pair once; every attempt rebuilds resamplers, STFT/OLA, recurrent state, queues, and timestamp ledgers, so pre-stall audio cannot leak into the recovered stream. Other faults are not automatically retried. Graceful shutdown now applies bounded backpressure while callbacks drain the output ring, preventing a transient model/flush burst from immediately overflowing the ring.
+
+Automated tests increased to 41 and cover the liveness monitor, external fault wake-up with silence, and bounded shutdown drain. A 10-second physical-device smoke test passed. Under the then-current desktop load, 16 frames/one thread faulted from input queue overflow at about 72 seconds, and 24 frames/one thread faulted at about 21 seconds with bridge p95 about 720 ms. A 30-second 2/4-thread check found no useful advantage from four threads. The selected Mac A probe, 16 frames/two threads, then completed 120 seconds with no fault, callback stall, or PortAudio status: model-call p95 93.89 ms, bridge-internal p95 360.07 ms, and input queue peak 12/50 blocks.
+
+This is a real CoreAudio/BlackHole engineering regression with no user speech, not AT-07 through AT-10 acceptance. Stage C remains `PARTIAL PASS`; the next gate is the 30-minute interactive Doubao run, followed by direct-microphone versus TSE/BlackHole tail A/B and physical fault drills. Detailed commands and local artifact names are indexed in `docs/MAC_A_NEXT_STAGE.md`.
+
+The live command now also exposes PyTorch inter-op thread count, explicit output prefill, and five-second queue-pressure samples. On this Mac, `16 frames / 2 intra-op / 1 inter-op / 100 ms prefill` completed a 180-second physical-device run with no fault or callback stall and bridge p95 `380.18 ms`; a 900-second run at 150 ms prefill stayed alive but had two input-overflow statuses and p95 `520.03 ms`. The 100 ms setting is therefore the next interactive candidate, not yet a final pass.
+
+A 900-second run at the 100 ms prefill candidate reached approximately 883 seconds before an input-overflow-induced output burst exceeded the bounded ring. It entered fault-silence as designed; bridge p95 at the point of failure was 499.99 ms and two PortAudio input-overflow statuses were recorded. This closes the current CPU/PyTorch configuration as insufficient for the 30-minute acceptance gate under the observed desktop load. Doubao interaction is intentionally postponed until a runtime or scheduling optimization is measured.
+
+### Recovery SLA (2026-09-19)
+
+A single block/queue/callback fault no longer permanently poisons the session. The controller keeps output silent, closes the old stream, discards stale audio, rebuilds resamplers, STFT/OLA, recurrent state, queues and ledgers, and reopens only the same explicit device pair. It does not continue with possibly corrupt state and never passes raw microphone audio through. A rolling circuit breaker defaults to two recoveries per five minutes; further failure latches FAULT. Reports retain every failed attempt, recovery reason and a `degraded` flag.
+
+A deliberate 50 ms-ring fault injection forced three consecutive input-queue overloads. Attempts one and two rebuilt the pipeline; attempt three was rejected by the circuit breaker and remained fault-silent (`faults_recovered=2`, `total_rejected=1`). A naturally transient fault followed by successful live continuation remains to be exercised before this counts as AT-10 evidence.
+
+An explicit `--fault-policy passthrough` is now available as the continuity-first alternative; `silence` remains the default. After the same three-fault injection exhausted two recoveries, the bridge stopped TSE work, reopened the same MacBook Air Microphone/BlackHole pair, and completed the remaining 4.09 seconds in raw passthrough mode (384 callbacks, no status or liveness fault). The final report says `final_mode=passthrough` and `degraded=true`. This validates the engineering transition only; the future UI warning and a Doubao-visible transition remain untested.
+
+### Mac A ONNX runtime and bounded enrollment (2026-09-19)
+
+The 45-second private registration recording exposed two separate constraints. First, tracing `tfmap_context_causal_100` with a different enrollment and merely declaring the enrollment axes dynamic is not valid: internal multi-head-attention reshapes remain specialized to the trace length. Second, repeatedly attending over all 45 seconds made an otherwise-correct personalized ONNX graph take roughly 212–233 ms per 64 ms chunk and immediately overflow the input queue.
+
+The runtime now retains the original registration recording but deterministically selects the highest-RMS 6-second window in a controlled quiet recording. The selected Mac A window was 4.5–10.5 seconds. Export, Torch/ONNX comparison and live execution use the same rule and report its metadata. Registration changes therefore require a local personalized ONNX re-export; they do not require model training or cloud ASR.
+
+The personalized 6-second FP32 ONNX passed 100 consecutive stateful chunks against PyTorch (`waveform max_abs=1.729e-6`, final state h/c max `7.093e-6`/`8.392e-5`). A 120-second MacBook Air Microphone → ONNX REAL-TSE → BlackHole run then completed in `final_mode=tse`, with no fault, recovery, callback stall, PortAudio status or passthrough. ORT used one CPU thread; model-call p50/p95/max were `25.83/29.29/55.85 ms`, bridge p95 was `260.16 ms`, and the input queue peaked at 3 blocks.
+
+The same configuration completed a 900-second soak in `final_mode=tse`: no fault, recovery, callback stall or passthrough; model-call p50/p95/max `25.80/29.24/157.33 ms`; bridge p50/p95/max `260.04/260.17/377.87 ms`; and input queue peak 6/50 blocks. The 5-second samples show no drift: input-queue averages were 0.422 blocks in the first half and 0.427 in the second, while output-ring averages were 6447 and 6436 frames. CoreAudio did report two `input overflow` statuses, so this is a stable engineering pass with two reported input discontinuities, not an error-free AT-09 pass. The user-visible 30-minute Doubao quality/endpointing gate remains separate.
+
+Startup now validates the fixed enrollment-conditioning shapes against the personalized ONNX before opening audio devices. A stale ONNX from an earlier enrollment fails with an explicit re-export instruction and cannot consume the automatic-recovery budget or enter passthrough. The automated suite contains 49 passing tests.

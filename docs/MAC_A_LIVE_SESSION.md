@@ -18,6 +18,20 @@ uv run micforyou record --input-device "精确麦克风名" \
   --duration 45
 ```
 
+原始 45 秒录音会保留；ONNX 运行准备会自动选择其中最高 RMS 的 6 秒窗口并记录起止，不会把整段 45 秒放进每次实时推理。
+
+首次注册或重录后，先在本机导出与该 6 秒窗口绑定的 ONNX（这是本地模型准备，不是训练）：
+
+```bash
+/Users/deuce/claudeproject/codexworks/micforyou/model-sources/wesep-real-tse/.venv-official/bin/python experiments/export_real_tse_onnx.py \
+  --repo /Users/deuce/claudeproject/codexworks/micforyou/model-sources/wesep-real-tse \
+  --model-dir /Users/deuce/claudeproject/codexworks/micforyou/model-sources/wesep-real-tse/pretrained/tfmap_context_causal_100 \
+  --enrollment /Users/deuce/claudeproject/codexworks/micforyou/test-data/human/enrollment.wav \
+  --enrollment-seconds 6 \
+  --output /Users/deuce/claudeproject/codexworks/micforyou/models/real_tse_core_fp32_personalized.onnx \
+  --report /Users/deuce/claudeproject/codexworks/micforyou/runs/mac-a-onnx-export-personalized.json
+```
+
 ## 第 2 步：120 秒真实 bridge（连续讲话 2 分钟）
 
 启动后**立即开始连续自然讲话**（读书/自由说话均可，含轻声段落），直到程序自动结束：
@@ -27,8 +41,13 @@ uv run micforyou record --input-device "精确麦克风名" \
   --repo /Users/deuce/claudeproject/codexworks/micforyou/model-sources/wesep-real-tse \
   --model-dir /Users/deuce/claudeproject/codexworks/micforyou/model-sources/wesep-real-tse/pretrained/tfmap_context_causal_100 \
   --enrollment /Users/deuce/claudeproject/codexworks/micforyou/test-data/human/enrollment.wav \
+  --enrollment-seconds 6 \
   --input-device "精确麦克风名" \
+  --backend onnx \
+  --onnx /Users/deuce/claudeproject/codexworks/micforyou/models/real_tse_core_fp32_personalized.onnx \
+  --onnx-threads 1 \
   --frames-per-chunk 8 \
+  --prefill-ms 100 \
   --duration 120 \
   --result /Users/deuce/claudeproject/codexworks/micforyou/runs/mac-a-live-120s-20260916.json
 ```
