@@ -1,6 +1,19 @@
 # MicForYou
 
-MicForYou keeps Doubao IME as the ASR/text layer and sends locally processed audio to it through BlackHole 2ch. BlackHole → Doubao routing is verified. A free local REAL-TSE causal checkpoint passes offline effect and stateful-streaming checks, but Mac B M1 measurements now close its deployment path: PyTorch, ONNX Runtime CPU, Dynamic INT8 and corrected CoreML experiments all fail their required gate. The current REAL-TSE model is not a daily-use runtime on that machine. Lightweight TSE selection is blocked until a reproducibly downloadable causal waveform model satisfies the source gate.
+MicForYou keeps Doubao IME as the ASR/text layer and sends locally processed audio to it through BlackHole 2ch. Processing and enrollment remain local; MicForYou does not implement ASR or type text.
+
+Mac A M5 now has a validated personalized FP32 ONNX path: 30 minutes in `final_mode=tse`, bridge p95 about 260 ms, bounded queues, no fault/recovery/passthrough, and no additional visible tail truncation versus direct Doubao input. Mac B M1 remains unsupported for this REAL-TSE checkpoint because every measured backend missed its real-time gate. Do not copy the Mac A runtime profile to Mac B without a new benchmark.
+
+## Daily Mac A commands
+
+After the one-time configuration in [the Stage D guide](docs/STAGE_D.md):
+
+```bash
+uv run micforyou status
+uv run micforyou run
+```
+
+Stop with `Control-C`. The default `silence` policy remains private on terminal faults. The optional `passthrough` policy prints a repeating warning whenever filtering is unavailable and raw microphone audio is being forwarded.
 
 ## Stage A quick start
 
@@ -24,7 +37,7 @@ Select `BlackHole 2ch` as Doubao's input if Doubao exposes a device selector. Ot
 
 Every actual run writes a JSON record under `/Users/deuce/claudeproject/codexworks/micforyou/runs/`. Real enrollment and test recordings must not be committed.
 
-See `docs/STAGE_A.md` for routing acceptance and recovery, `docs/STAGE_B.md` for model evidence, `docs/STAGE_C.md` for the causal bridge and latency evidence, `docs/DOUBAO_AB.md` for the transcription A/B protocol, and `docs/HUMAN_RECORDING.md` for the single concentrated human recording step. For a physically isolated workstation, start with [the Mac B offline continuation package](docs/MAC_B_CONTINUATION.md).
+See `docs/STAGE_A.md` for routing acceptance and recovery, `docs/STAGE_B.md` for model evidence, `docs/STAGE_C.md` for the causal bridge and latency evidence, [docs/STAGE_D.md](docs/STAGE_D.md) for daily operation, `docs/DOUBAO_AB.md` for the transcription A/B protocol, and `docs/HUMAN_RECORDING.md` for the single concentrated human recording step. For a physically isolated workstation, start with [the Mac B offline continuation package](docs/MAC_B_CONTINUATION.md).
 
 Before enabling the live bridge on any machine, run the pre-launch benchmark and paced latency check described in [the performance guide](docs/PERFORMANCE_GUIDE.md); the live bridge has no default `--frames-per-chunk` by design.
 

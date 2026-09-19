@@ -1,6 +1,6 @@
 # MicForYou Implementation Spec
 
-日期：2026-09-13。状态：待用户 review；本文件是实现交接材料，不代表验证已经通过。
+日期：2026-09-13，更新于 2026-09-20。状态：Mac A Stage A–C 主链路及 Stage D CLI MVP 已实测；各项具体 PASS/PARTIAL 边界见阶段文档。
 
 ## 1. 范围与优先级
 

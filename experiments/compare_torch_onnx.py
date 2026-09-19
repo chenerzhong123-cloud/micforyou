@@ -238,6 +238,17 @@ def main() -> None:
     print(f"final states: h_max={max(s['h_max_abs'] for s in state_errors):.3e} "
           f"c_max={max(s['c_max_abs'] for s in state_errors):.3e}")
     print(f"verdict: {report['gate']['verdict']}")
+    # ORT + PyTorch can throw recursive_mutex during macOS interpreter
+    # teardown after a complete report. Exit only after flushing the durable
+    # verdict; unlike the old behavior, a failed numerical gate is non-zero.
+    if sys.platform == "darwin":
+        import os
+
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0 if verdict_pass else 2)
+    if not verdict_pass:
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

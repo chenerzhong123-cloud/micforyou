@@ -18,6 +18,14 @@ from .audio import (
     resolve_device,
 )
 from .evaluation import create_mixtures, score_output
+from .product import (
+    ProductConfig,
+    build_bridge_command,
+    default_config_path,
+    load_config,
+    required_paths,
+    save_config,
+)
 from .recommendation import BenchmarkCandidate, recommend
 
 
@@ -141,6 +149,160 @@ def command_recommend_frames(args: argparse.Namespace) -> None:
     write_json(recommend(candidates).to_dict(), args.result)
 
 
+def product_status(config: ProductConfig) -> dict[str, Any]:
+    paths = {name: path.exists() for name, path in required_paths(config).items()}
+    devices = list_devices()
+    device_errors: list[str] = []
+    for name, direction in (
+        (config.input_device, "input"),
+        (config.output_device, "output"),
+    ):
+        try:
+            resolve_device(devices, name, direction)
+        except ValueError as error:
+            device_errors.append(str(error))
+    return {
+        "ready": all(paths.values()) and not device_errors,
+        "input_device": config.input_device,
+        "output_device": config.output_device,
+        "fault_policy": config.fault_policy,
+        "paths": paths,
+        "device_errors": device_errors,
+        "system_default_input_unchanged": True,
+    }
+
+
+def command_configure(args: argparse.Namespace) -> None:
+    config = ProductConfig(
+        input_device=args.input_device,
+        output_device=args.output_device,
+        model_repo=args.model_repo.resolve(),
+        model_dir=args.model_dir.resolve(),
+        enrollment=args.enrollment.resolve(),
+        onnx_model=args.onnx.resolve(),
+        # Do not resolve this symlink: venv Python relies on the invoked path
+        # to discover pyvenv.cfg and its installed packages.
+        runtime_python=args.runtime_python.expanduser().absolute(),
+        project_root=args.project_root.resolve(),
+        fault_policy=args.fault_policy,
+    )
+    # Resolve both endpoints now so a typo never becomes a saved silent route.
+    devices = list_devices()
+    resolve_device(devices, config.input_device, "input")
+    resolve_device(devices, config.output_device, "output")
+    save_config(config, args.config)
+    write_json(
+        {"saved": str(args.config), "config": config.to_dict(),
+         "status": product_status(config)},
+        None,
+    )
+
+
+def command_status(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    write_json(product_status(config), args.output)
+
+
+def command_run(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    status = product_status(config)
+    if not status["ready"]:
+        raise ValueError(f"MicForYou is not ready: {status}")
+    result = args.result or timestamped_result("product-run")
+    if config.fault_policy == "passthrough":
+        print(
+            "WARNING: continuity-first mode may pass unfiltered microphone "
+            "audio after recovery is exhausted.",
+            flush=True,
+        )
+    else:
+        print("Privacy-first mode: terminal faults remain silent.", flush=True)
+    print(f"Run report: {result}", flush=True)
+    subprocess.run(
+        build_bridge_command(config, args.duration, result),
+        cwd=config.project_root,
+        check=True,
+    )
+
+
+def command_enroll(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    source = resolve_device(list_devices(), config.input_device, "input")
+    stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    candidate_audio = config.enrollment.with_name(
+        f"{config.enrollment.stem}.candidate-{stamp}{config.enrollment.suffix}"
+    )
+    candidate_onnx = config.onnx_model.with_name(
+        f"{config.onnx_model.stem}.candidate-{stamp}{config.onnx_model.suffix}"
+    )
+    candidate_audio.parent.mkdir(parents=True, exist_ok=True)
+    candidate_onnx.parent.mkdir(parents=True, exist_ok=True)
+    print(
+        f"Recording starts in {args.countdown:g}s and lasts {args.duration:g}s...",
+        flush=True,
+    )
+    write_json(
+        record_input(source, candidate_audio, args.duration, args.countdown),
+        candidate_audio.with_suffix(".json"),
+    )
+    export_report = timestamped_result("enrollment-onnx-export")
+    correctness_report = timestamped_result("enrollment-onnx-correctness")
+    common = [
+        "--repo", str(config.model_repo),
+        "--model-dir", str(config.model_dir),
+        "--enrollment", str(candidate_audio),
+        "--enrollment-seconds", str(config.enrollment_seconds),
+    ]
+    subprocess.run(
+        [
+            str(config.runtime_python),
+            str(config.project_root / "experiments" / "export_real_tse_onnx.py"),
+            *common,
+            "--output", str(candidate_onnx),
+            "--report", str(export_report),
+        ],
+        cwd=config.project_root,
+        check=True,
+    )
+    subprocess.run(
+        [
+            str(config.runtime_python),
+            str(config.project_root / "experiments" / "compare_torch_onnx.py"),
+            *common,
+            "--onnx", str(candidate_onnx),
+            "--frames-per-chunk", str(config.frames_per_chunk),
+            "--chunks", "100",
+            "--result", str(correctness_report),
+        ],
+        cwd=config.project_root,
+        check=True,
+    )
+    correctness = json.loads(correctness_report.read_text(encoding="utf-8"))
+    if correctness.get("gate", {}).get("verdict") != "PASS":
+        raise ValueError(
+            f"candidate enrollment failed correctness gate: {correctness_report}"
+        )
+    backups: dict[str, str] = {}
+    for current in (config.enrollment, config.onnx_model):
+        if current.exists():
+            backup = current.with_name(f"{current.name}.backup-{stamp}")
+            current.replace(backup)
+            backups[str(current)] = str(backup)
+    candidate_audio.replace(config.enrollment)
+    candidate_onnx.replace(config.onnx_model)
+    write_json(
+        {
+            "status": "READY",
+            "enrollment": str(config.enrollment),
+            "onnx_model": str(config.onnx_model),
+            "backups": backups,
+            "export_report": str(export_report),
+            "correctness_report": str(correctness_report),
+        },
+        None,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="micforyou")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -208,6 +370,45 @@ def build_parser() -> argparse.ArgumentParser:
     recommend_parser.add_argument("--benchmark", type=Path, required=True)
     recommend_parser.add_argument("--result", type=Path)
     recommend_parser.set_defaults(func=command_recommend_frames)
+
+    configure = subparsers.add_parser(
+        "configure", help="save the Stage-D ONNX runtime configuration"
+    )
+    configure.add_argument("--config", type=Path, default=default_config_path())
+    configure.add_argument("--input-device", required=True)
+    configure.add_argument("--output-device", default=BLACKHOLE_NAME)
+    configure.add_argument("--model-repo", type=Path, required=True)
+    configure.add_argument("--model-dir", type=Path, required=True)
+    configure.add_argument("--enrollment", type=Path, required=True)
+    configure.add_argument("--onnx", type=Path, required=True)
+    configure.add_argument("--runtime-python", type=Path, required=True)
+    configure.add_argument(
+        "--project-root", type=Path,
+        default=Path(__file__).resolve().parents[2],
+    )
+    configure.add_argument(
+        "--fault-policy", choices=("silence", "passthrough"), default="silence"
+    )
+    configure.set_defaults(func=command_configure)
+
+    status = subparsers.add_parser("status", help="check saved runtime readiness")
+    status.add_argument("--config", type=Path, default=default_config_path())
+    status.add_argument("--output", type=Path)
+    status.set_defaults(func=command_status)
+
+    run = subparsers.add_parser("run", help="run the configured ONNX TSE bridge")
+    run.add_argument("--config", type=Path, default=default_config_path())
+    run.add_argument("--duration", type=float, default=0)
+    run.add_argument("--result", type=Path)
+    run.set_defaults(func=command_run)
+
+    enroll = subparsers.add_parser(
+        "enroll", help="record and validate a replacement enrollment"
+    )
+    enroll.add_argument("--config", type=Path, default=default_config_path())
+    enroll.add_argument("--duration", type=float, default=45.0)
+    enroll.add_argument("--countdown", type=float, default=3.0)
+    enroll.set_defaults(func=command_enroll)
 
     bridge = subparsers.add_parser("passthrough", help="bridge a physical mic to BlackHole")
     bridge.add_argument("--input-device", required=True)

@@ -448,6 +448,12 @@ def main() -> None:
     passthrough_report: dict | None = None
     if fallback_reason is not None and not interrupted:
         passthrough_started = time.monotonic()
+        print(
+            "WARNING: TSE filtering is unavailable; continuity-first mode is "
+            "passing UNFILTERED microphone audio to BlackHole.",
+            flush=True,
+        )
+        next_passthrough_warning = passthrough_started + 30
         passthrough_liveness = CallbackLivenessMonitor(
             args.callback_timeout_ms / 1000
         )
@@ -476,6 +482,13 @@ def main() -> None:
                     if deadline is not None and time.monotonic() >= deadline:
                         break
                     sd.sleep(100)
+                    if time.monotonic() >= next_passthrough_warning:
+                        print(
+                            "WARNING: still passing UNFILTERED microphone audio "
+                            "to BlackHole.",
+                            flush=True,
+                        )
+                        next_passthrough_warning = time.monotonic() + 30
                     callback_age = passthrough_liveness.check()
                     if callback_age is not None:
                         passthrough_fault = (
