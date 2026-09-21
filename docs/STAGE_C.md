@@ -1,6 +1,6 @@
 # Stage C — causal core and real-time bridge
 
-Status: `PARTIAL PASS`. Mac A's personalized 6-second FP32 ONNX path now passes stateful correctness, a 30-minute physical-device/Doubao run, bounded bridge p95, and the direct-microphone tail A/B. The latest 30-minute run had no fault, callback stall, stream status, recovery or passthrough. True speech-to-text end-to-end stopwatch p95 and detachable-headset unplug/replug remain unresolved. Mac B's offline effect passes, but its measured PyTorch/ORT/CoreML runtimes still fail the real-time gate.
+Status: `RUNTIME PASS / QUALITY PARTIAL`. Mac A's personalized 6-second FP32 ONNX path passes stateful correctness, a 30-minute physical-device/Doubao run, bounded bridge p95, direct-microphone tail A/B, and a physical headset unplug/replug recovery with no raw fallback. A genuine workplace clip showed user-accepted partial filtering but also an intelligible target-absent leak, so the runtime result does not establish daily privacy quality. True speech-to-text end-to-end stopwatch p95 remains unresolved. Mac B's offline effect passes, but its measured PyTorch/ORT/CoreML runtimes still fail the real-time gate.
 
 ## Why the model is actually streamable
 

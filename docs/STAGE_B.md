@@ -1,6 +1,6 @@
 # Stage B — offline TSE baseline and selection
 
-Status: `REAL-WORLD QUALITY FAIL`. Synthetic, public-real-data, and Mac B+wired-headset controlled user-voice comparisons selected REAL-TSE `tfmap_context_causal_100`, but a genuine noisy-workplace target-absent check preserved intelligible non-target speech. The checkpoint remains a research/runtime baseline and is not accepted for daily privacy filtering.
+Status: `USER-ACCEPTED PARTIAL EFFECT / HARD TARGET-ABSENT MISS`. Synthetic, public-real-data, and Mac B+wired-headset controlled user-voice comparisons selected REAL-TSE `tfmap_context_causal_100`. In a genuine workplace sample the user heard useful reduction of background speech/noise and accepted the current effect as worth continuing, but a target-absent region still preserved intelligible non-target speech. The checkpoint remains experimental and cannot be described as strict privacy isolation.
 
 ## Controlled synthetic protocol
 
@@ -53,10 +53,18 @@ Two shorter regions were then played through BlackHole to Doubao for human seman
 
 The private audio and verbatim workplace transcript are not committed. The target-absent result violates the MVP requirement that no recognizable colleague sentence reach Doubao. Good runtime, sample continuity, and target preservation cannot override this failure.
 
+The user subsequently compared the private original and processed clips by ear and judged that processing did remove part of the other speech and noise. This is recorded as a subjective partial-effect acceptance and authorization to continue the project, not as a reversal of the target-absent evidence.
+
+### Enrollment-window and presence-gate follow-up
+
+The automatic 34–40 second enrollment window was compared with 20–26, 30–36 and 38–44 second windows on the same fixed regions. None repaired selectivity: the current and 38-second windows attenuated target/non-target by about `-1.82/-2.43 dB` and `-1.90/-2.62 dB`; the 20- and 30-second windows attenuated the target more than the non-target. The failure is therefore not explained by one unlucky 6-second selection.
+
+The existing 16 kHz ECAPA branch was also evaluated as a possible target-presence diagnostic. Whole-region cosine was 0.642 for target and 0.541 for non-target, but 2-second sliding windows overlapped heavily: target median was 0.492 while non-target maximum was 0.532. A threshold would either leak some non-target windows or remove substantial target speech, and a 2-second decision window would exceed the real-time latency budget. No live presence gate is enabled from these uncalibrated scores.
+
 ## License boundary
 
 REAL-TSE source commit `2a540977a348fbaa92e623210505430e2cec608d`; causal TFMap weight SHA-256 `97c01b79b0cf1a5b914a4a3bc1113c1864752ebdd320f528e77a53202447fef2`. New source files carry Apache-2.0 SPDX headers, but the repository has no root license and the checkpoint license is not stated. It is acceptable for the current local experiment, not cleared for redistribution or a commercial product.
 
 ## Remaining gate
 
-The immediate next check is a local enrollment-window sensitivity sweep over several clean headset windows using the same fixed `S03` and target-absent `S01` regions. If no window materially suppresses the target-absent region while preserving `S03`, this REAL-TSE checkpoint must be rejected for the genuine workplace scenario and work must move to a better model, calibrated target-presence gate, or fine-tuning plan. A live Mac B stream remains untested, but it is not the current blocker: Mac A already demonstrates the quality failure. See [Doubao A/B](DOUBAO_AB.md).
+Enrollment-window selection and the cheap presence-gate hypothesis are now closed. Further improvement requires either a stronger causal waveform TSE candidate or a fine-tuning experiment with independent clean target speech, representative consented interference, held-out target/non-target evaluation, and a new runtime gate. Fine-tuning the current checkpoint on the evaluation clip itself is not valid. A live Mac B stream remains untested, but it is not the current blocker: Mac A already demonstrates both the partial benefit and the hard target-absent miss. See [Doubao A/B](DOUBAO_AB.md).

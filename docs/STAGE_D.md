@@ -1,6 +1,6 @@
 # Stage D：Mac A 日常运行入口
 
-日期：2026-09-21。状态：`CLI + MAC A HOT-PLUG PASS / REAL-WORLD QUALITY FAIL`。运行时与恢复机制通过，但真实办公室目标缺席样本仍向豆包输出了可辨认的他人语音，因此当前版本只用于实验，不得标记为日常隐私过滤可用。
+日期：2026-09-22。状态：`CLI + MAC A HOT-PLUG PASS / USER-ACCEPTED EXPERIMENTAL EFFECT`。用户确认真实办公室处理后减少了部分他人声和噪声，并接受继续项目；但目标缺席样本仍向豆包输出了可辨认的他人语音，因此不得标记为“只保留本人”或严格隐私隔离。
 
 MicForYou 不修改 macOS 默认输入，也不实现 ASR。日常链路仍是：
 
