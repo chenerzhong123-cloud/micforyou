@@ -1,6 +1,6 @@
 # Stage B — offline TSE baseline and selection
 
-Status: `PARTIAL PASS`. Synthetic, public-real-data, and Mac B+wired-headset controlled user-voice comparisons select REAL-TSE `tfmap_context_causal_100`. A genuine noisy-workplace recording remains `NOT RUN`.
+Status: `REAL-WORLD QUALITY FAIL`. Synthetic, public-real-data, and Mac B+wired-headset controlled user-voice comparisons selected REAL-TSE `tfmap_context_causal_100`, but a genuine noisy-workplace target-absent check preserved intelligible non-target speech. The checkpoint remains a research/runtime baseline and is not accepted for daily privacy filtering.
 
 ## Controlled synthetic protocol
 
@@ -42,10 +42,21 @@ The intended workstation/microphone combination supplied independent 60 s enroll
 
 This confirms a real user voice and the intended headset can work with the model. It does not replace a real noisy-room sample or subjective listening, particularly because quiet-speech speaker similarity falls at -12 dB. Full evidence is in [Mac B evaluation](MAC_B_EVALUATION.md).
 
+## Mac A genuine workplace recording
+
+On 2026-09-21 the user identified diarization cluster `S03` as their own voice in a private 85-minute workplace recording. A 75-second local slice was processed with the current headset enrollment and FP32 ONNX runtime. Input and output were sample-exact in length, all samples were finite, processing RTF was 0.344, and model-call p95 was 21.76 ms.
+
+Two shorter regions were then played through BlackHole to Doubao for human semantic acceptance:
+
+- A 27-second `S03` region retained the expected target meaning with only minor repetition/word substitutions. Its RMS attenuation was about 1.8 dB.
+- A 13-second target-absent `S01` region retained complete, intelligible non-target sentences in Doubao. Its RMS attenuation was only about 2.4 dB.
+
+The private audio and verbatim workplace transcript are not committed. The target-absent result violates the MVP requirement that no recognizable colleague sentence reach Doubao. Good runtime, sample continuity, and target preservation cannot override this failure.
+
 ## License boundary
 
 REAL-TSE source commit `2a540977a348fbaa92e623210505430e2cec608d`; causal TFMap weight SHA-256 `97c01b79b0cf1a5b914a4a3bc1113c1864752ebdd320f528e77a53202447fef2`. New source files carry Apache-2.0 SPDX headers, but the repository has no root license and the checkpoint license is not stated. It is acceptable for the current local experiment, not cleared for redistribution or a commercial product.
 
 ## Remaining gate
 
-The supplied Mac B wired-headset recordings now have both controlled objective scores and a current-Mac BlackHole → Doubao transcription A/B result. The latter shows material target recovery at quiet -12 dB and normal -12 dB, while target absence emitted no text; it also shows material wording substitutions. A genuine noisy-workplace recording and a live Mac B device stream remain untested. Until those are complete, Stage B is not fully passed and no claim of daily usability is allowed. See [Doubao A/B](DOUBAO_AB.md).
+The immediate next check is a local enrollment-window sensitivity sweep over several clean headset windows using the same fixed `S03` and target-absent `S01` regions. If no window materially suppresses the target-absent region while preserving `S03`, this REAL-TSE checkpoint must be rejected for the genuine workplace scenario and work must move to a better model, calibrated target-presence gate, or fine-tuning plan. A live Mac B stream remains untested, but it is not the current blocker: Mac A already demonstrates the quality failure. See [Doubao A/B](DOUBAO_AB.md).

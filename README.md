@@ -2,7 +2,7 @@
 
 MicForYou keeps Doubao IME as the ASR/text layer and sends locally processed audio to it through BlackHole 2ch. Processing and enrollment remain local; MicForYou does not implement ASR or type text.
 
-Mac A M5 now has a validated personalized FP32 ONNX path: 30 minutes in `final_mode=tse`, bridge p95 about 260 ms, bounded queues, no fault/recovery/passthrough, and no additional visible tail truncation versus direct Doubao input. A physical headset hot-unplug/replug test also passed: output stayed silent while absent, the same explicit route reopened through TSE, and raw audio was never forwarded. Enrollment should be refreshed when the physical microphone changes. Mac B M1 remains unsupported for this REAL-TSE checkpoint because every measured backend missed its real-time gate. Do not copy the Mac A runtime profile to Mac B without a new benchmark.
+Mac A M5 has a validated FP32 ONNX runtime path: 30 minutes in `final_mode=tse`, bridge p95 about 260 ms, bounded queues, and a passing physical headset hot-unplug/replug test with no raw fallback. However, a genuine workplace target-absent clip still produced intelligible colleague text in Doubao. The current checkpoint therefore fails the real-world quality/privacy gate and is for experimentation only, not daily use. Enrollment should be refreshed when the physical microphone changes. Mac B M1 also remains unsupported for this REAL-TSE checkpoint because every measured backend missed its real-time gate.
 
 ## Daily Mac A commands
 
