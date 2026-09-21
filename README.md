@@ -41,6 +41,8 @@ See `docs/STAGE_A.md` for routing acceptance and recovery, `docs/STAGE_B.md` for
 
 The accepted next phase has two separate tracks: keep the current Mac A build as an Experimental Alpha without weakening its warnings, and investigate quality improvements offline. The measured cost, data limits, consent boundary, and stop/go gates for adapting the current checkpoint are in [the fine-tuning feasibility note](docs/FINE_TUNING_FEASIBILITY.md).
 
+All future quality candidates must use the frozen, private [real-environment regression protocol](docs/QUALITY_REGRESSION.md). The audio remains outside Git; only the protocol and evidence boundary are versioned.
+
 Before enabling the live bridge on any machine, run the pre-launch benchmark and paced latency check described in [the performance guide](docs/PERFORMANCE_GUIDE.md); the live bridge has no default `--frames-per-chunk` by design.
 
 Mac B's returned thread sweep and ONNX CPU results are recorded in [the 2026-09-18 runtime report](docs/MAC_B_RUNTIME_RESULTS_20260918.md). INT8 correctness failed. The corrected CoreML auto/four-thread matrix also failed with best RTF 1.052, so `CURRENT REAL-TSE ON M1: STOP`; see [the final thread recheck](docs/MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md). The next-model source gate and screened candidates are recorded in [the lightweight TSE screening](docs/LIGHTWEIGHT_TSE_SCREENING_20260918.md).
