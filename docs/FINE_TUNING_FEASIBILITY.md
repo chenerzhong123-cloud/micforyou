@@ -1,6 +1,6 @@
 # 当前 REAL-TSE 微调可行性
 
-日期：2026-09-22。结论：`FEASIBLE AS A SEPARATE R&D EXPERIMENT / NOT READY TO START TRAINING`。
+日期：2026-09-22。结论：`BOUNDED MPS STEP PASS / DATA AND QUALITY EXPERIMENT NOT STARTED`。
 
 当前 checkpoint 已在 Mac A 上通过实时链路和设备恢复验收，用户也确认真实办公室样本比原音更好，能减少部分他人声和噪音。但目标缺席片段仍可被豆包完整转写。微调可以作为后续研究方向，不能把现有证据解释为只差一次简单训练。
 
@@ -12,10 +12,11 @@
 - 当前官方训练入口直接调用 `torch.cuda.set_device`、NCCL、`.cuda()` 和 DistributedDataParallel。它不能原样在 Mac A 的 MPS 或 CPU 上运行。
 - 两批 Mac B 录音的 SHA-256 均不同，确为两套独立采集。每套包含 60 秒 enrollment、25 秒正常说话和 25 秒轻声说话，可严格拆分训练和验收，但本人独立测试语音合计仍只有约 100 秒。
 - 真实办公室录音中已有本人和他人片段，可用于诊断；当前没有把同事语音从“效果验收材料”扩大为“模型训练材料”的授权。
+- Mac A M5 已用确定性合成张量完成一次受限 MPS forward、backward 和 optimizer step：只解冻各频带 mask 的最终 projection，共 `527,364` 个可训练参数；梯度均为有限值，未保存 checkpoint。该结果只证明训练技术路径可运行，不证明真实数据收敛或质量改善。
 
 ## 为什么现在不直接训练
 
-1. **训练程序要先改造。** 需要新增单进程 CPU/MPS 路径、验证各算子反向传播兼容性，并建立可恢复的 checkpoint 和确定性评估；这不是修改一个配置值。
+1. **训练程序要先改造。** 官方入口仍需新增单进程 CPU/MPS 路径、真实 loss/data loader、可恢复 checkpoint 和确定性评估。最小 MPS backward 已通过，但这不是完整 trainer。
 2. **数据不足且分布窄。** 约 100 秒本人测试语音容易使 2724 万参数模型记住设备、房间和句子，离线分数变好也可能只是过拟合。
 3. **失败点是“同事被当成本人”。** 只用本人干净录音和公开干扰音训练，未必能修复真实办公室中的相似声线、距离、混响和设备响应。
 4. **不能污染验收集。** 已用于证明目标缺席失败的片段必须保留为 held-out，不可再拿同一片段训练后宣称问题已解决。
@@ -53,6 +54,8 @@
 
 PoC 的继续门槛：held-out 本人语义不明显退化，目标缺席泄漏显著下降，0/-6 dB 不倒退，并且导出后的 Mac A p95 仍不超过 500 ms。任何一项失败就停止扩大训练。
 
+能力 smoke 可用 `experiments/probe_finetune_mps.py` 复现。它只在内存里更新一次最终 mask projection，使用合成张量，不读取项目语音、不保存模型，不能当作微调结果。
+
 ## 需要用户决定的唯一数据问题
 
 开始训练前必须决定：是否允许把真实办公室录音中可辨认的同事声音仅在本机用于模型训练。选择“不允许”不会阻塞项目；我们仍可使用公开许可干扰音和以后由知情参与者专门录制的材料，只是对真实办公室误放行的修复把握会更低。
@@ -62,4 +65,3 @@ PoC 的继续门槛：held-out 本人语义不明显退化，目标缺席泄漏�
 - WeSep 当前状态与发布边界：<https://github.com/wenet-e2e/wesep>
 - REAL-TSE Challenge checkpoint 与评估：<https://github.com/REAL-TSE/REAL-TSE-Challenge>
 - 本项目已有轻量候选筛选：[`LIGHTWEIGHT_TSE_SCREENING_20260918.md`](LIGHTWEIGHT_TSE_SCREENING_20260918.md)
-

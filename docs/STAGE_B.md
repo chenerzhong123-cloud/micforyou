@@ -55,6 +55,8 @@ The private audio and verbatim workplace transcript are not committed. The targe
 
 The user subsequently compared the private original and processed clips by ear and judged that processing did remove part of the other speech and noise. This is recorded as a subjective partial-effect acceptance and authorization to continue the project, not as a reversal of the target-absent evidence.
 
+The frozen 25-second alternating-speaker Q03 comparison was also human-reviewed on 2026-09-22: the processed version was judged better, the user's voice remained complete, and the other voice was reduced. This is a positive alternating-speech result. It is not labeled simultaneous overlap, and it does not override the target-absent failure. See [real-environment quality regression](QUALITY_REGRESSION.md).
+
 ### Enrollment-window and presence-gate follow-up
 
 The automatic 34–40 second enrollment window was compared with 20–26, 30–36 and 38–44 second windows on the same fixed regions. None repaired selectivity: the current and 38-second windows attenuated target/non-target by about `-1.82/-2.43 dB` and `-1.90/-2.62 dB`; the 20- and 30-second windows attenuated the target more than the non-target. The failure is therefore not explained by one unlucky 6-second selection.
