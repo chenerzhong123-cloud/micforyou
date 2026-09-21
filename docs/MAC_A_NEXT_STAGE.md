@@ -2,6 +2,8 @@
 
 日期：2026-09-19。当前范围：以 Mac A（M5）完成可用原型；Mac B（M1）只作为后续兼容性与性能优化验收，不阻塞本阶段。
 
+> 2026-09-22 更新：下列运行时工作已经完成，真实耳机拔插也已通过。当前进入质量迭代：冻结已通过的 Experimental Alpha，同时离线寻找更强 causal waveform TSE；若没有可用 checkpoint，再按[微调可行性与数据授权门槛](FINE_TUNING_FEASIBILITY.md)进行受限 PoC。真实办公室效果已获用户主观接受，但目标缺席硬门仍失败。
+
 ## 当前固定基线
 
 - 链路：实体麦克风 → REAL-TSE → BlackHole 2ch → 豆包输入法；豆包仍是唯一 ASR。
