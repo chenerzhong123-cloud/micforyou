@@ -166,6 +166,7 @@ def product_status(config: ProductConfig) -> dict[str, Any]:
         "input_device": config.input_device,
         "output_device": config.output_device,
         "fault_policy": config.fault_policy,
+        "route_change_policy": config.route_change_policy,
         "paths": paths,
         "device_errors": device_errors,
         "system_default_input_unchanged": True,
@@ -185,6 +186,7 @@ def command_configure(args: argparse.Namespace) -> None:
         runtime_python=args.runtime_python.expanduser().absolute(),
         project_root=args.project_root.resolve(),
         fault_policy=args.fault_policy,
+        route_change_policy=args.route_change_policy,
     )
     # Resolve both endpoints now so a typo never becomes a saved silent route.
     devices = list_devices()
@@ -217,6 +219,13 @@ def command_run(args: argparse.Namespace) -> None:
         )
     else:
         print("Privacy-first mode: terminal faults remain silent.", flush=True)
+    if config.route_change_policy == "continue_tse":
+        print(
+            "Route-change policy: silence on interruption, then reopen the same TSE route.",
+            flush=True,
+        )
+    else:
+        print("Route-change policy: silence if the selected input disappears.", flush=True)
     print(f"Run report: {result}", flush=True)
     subprocess.run(
         build_bridge_command(config, args.duration, result),
@@ -388,6 +397,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     configure.add_argument(
         "--fault-policy", choices=("silence", "passthrough"), default="silence"
+    )
+    configure.add_argument(
+        "--route-change-policy",
+        choices=("continue_tse", "silence_on_route_change"),
+        default="continue_tse",
     )
     configure.set_defaults(func=command_configure)
 

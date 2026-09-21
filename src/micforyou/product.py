@@ -25,6 +25,7 @@ class ProductConfig:
     project_root: Path
     output_device: str = "BlackHole 2ch"
     fault_policy: str = "silence"
+    route_change_policy: str = "continue_tse"
     frames_per_chunk: int = 8
     onnx_threads: int = 1
     prefill_ms: float = 100.0
@@ -32,10 +33,15 @@ class ProductConfig:
     enrollment_seconds: float = 6.0
     auto_recoveries: int = 2
     recovery_window_seconds: float = 300.0
+    route_reconnect_timeout_seconds: float = 120.0
 
     def validate(self) -> None:
         if self.fault_policy not in {"silence", "passthrough"}:
             raise ValueError("fault_policy must be silence or passthrough")
+        if self.route_change_policy not in {"continue_tse", "silence_on_route_change"}:
+            raise ValueError(
+                "route_change_policy must be continue_tse or silence_on_route_change"
+            )
         if self.frames_per_chunk <= 0:
             raise ValueError("frames_per_chunk must be positive")
         if self.onnx_threads < 0:
@@ -46,6 +52,8 @@ class ProductConfig:
             raise ValueError("enrollment_seconds must be positive")
         if self.auto_recoveries < 0 or self.recovery_window_seconds <= 0:
             raise ValueError("invalid recovery budget")
+        if self.route_reconnect_timeout_seconds <= 0:
+            raise ValueError("route_reconnect_timeout_seconds must be positive")
 
     def to_dict(self) -> dict:
         payload = asdict(self)
@@ -143,6 +151,10 @@ def build_bridge_command(
         str(config.queue_ms),
         "--fault-policy",
         config.fault_policy,
+        "--route-change-policy",
+        config.route_change_policy,
+        "--route-reconnect-timeout-seconds",
+        str(config.route_reconnect_timeout_seconds),
         "--auto-recoveries",
         str(config.auto_recoveries),
         "--recovery-window-seconds",

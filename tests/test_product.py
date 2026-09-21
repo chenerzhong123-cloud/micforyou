@@ -41,6 +41,16 @@ def test_config_rejects_invalid_fault_policy(tmp_path: Path) -> None:
         config(tmp_path, fault_policy="guess").validate()
 
 
+def test_config_rejects_invalid_route_change_policy(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        config(tmp_path, route_change_policy="guess").validate()
+
+
+def test_config_rejects_invalid_route_reconnect_timeout(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        config(tmp_path, route_reconnect_timeout_seconds=0).validate()
+
+
 def test_bridge_command_contains_explicit_safe_runtime_contract(tmp_path: Path) -> None:
     command = build_bridge_command(config(tmp_path), 0, tmp_path / "result.json")
 
@@ -48,4 +58,6 @@ def test_bridge_command_contains_explicit_safe_runtime_contract(tmp_path: Path) 
     assert command[1] == str(tmp_path / "project/experiments/run_real_tse_bridge.py")
     assert command[command.index("--backend") + 1] == "onnx"
     assert command[command.index("--fault-policy") + 1] == "silence"
+    assert command[command.index("--route-change-policy") + 1] == "continue_tse"
+    assert command[command.index("--route-reconnect-timeout-seconds") + 1] == "120.0"
     assert command[command.index("--duration") + 1] == "0"

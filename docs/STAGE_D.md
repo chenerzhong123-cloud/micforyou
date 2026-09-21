@@ -1,11 +1,11 @@
 # Stage D：Mac A 日常运行入口
 
-日期：2026-09-20。状态：`CLI MVP PASS`；原生菜单栏 UI、真实耳机拔插和 Mac B 运行仍未完成。
+日期：2026-09-21。状态：`CLI MVP + MAC A HOT-PLUG PASS`；原生菜单栏 UI 和 Mac B 运行仍未完成。
 
 MicForYou 不修改 macOS 默认输入，也不实现 ASR。日常链路仍是：
 
 ```text
-MacBook Air Microphone → REAL-TSE/ONNX → BlackHole 2ch → 豆包输入法
+explicit physical microphone → REAL-TSE/ONNX → BlackHole 2ch → 豆包输入法
 ```
 
 ## 已配置的 Mac A
@@ -40,6 +40,20 @@ MicForYou 从不修改系统默认输入，所以“恢复原输入”只涉及�
 
 切换策略需重新运行一次 `configure`，不能在运行中静默切换。不会自动选择另一支麦克风。
 
+默认 `continue_tse` 会在已选物理输入消失时保持静音、等待最多 120 秒；同名输入重新出现后，以重新解析的设备索引重开同一条 TSE → BlackHole 链路。运行中同时检查 PortAudio `input_underflow` 和短命独立进程取得的新 CoreAudio 设备清单；无法确认原设备仍在时按失败关闭处理。它不依赖 macOS 将旧流自动接到内置麦克风，也不会 raw passthrough。若有意改用另一支麦克风，请先用 `configure` 明确更改 `--input-device`，再开始新的运行。
+
+### 2026-09-21 真实拔插验收
+
+Mac A M5、`External Microphone`、ONNX CPU/1 thread、8 frames 实测 300 秒：
+
+- 耳机连接时，豆包完整识别 TSE 基线句；
+- 拔出后约在运行第 33.02 秒收到 `input underflow` 并关闭采集；对 MacBook microphone 说测试句时豆包无文字；
+- 同一耳机在静音等待期间返回，等待 76.39 秒后重新打开 TSE；豆包完整识别恢复句；
+- 最终 `final_mode=tse`，`reconnections=1`，`passthrough=null`，恢复后的第二次尝试无 fault；
+- 恢复后 bridge latency p95 为 260.20 ms，模型调用 p95 为 29.26 ms；整段进程平均约占一个 CPU 核的 31.3%，峰值 RSS 约 1.06 GB。
+
+运行 JSON 与语音均仅保存在本机私有工作目录，不提交 Git。
+
 ## 重新注册
 
 在安静环境中运行：
@@ -50,11 +64,13 @@ uv run micforyou enroll
 
 程序录制 45 秒候选语音，自动选择最高 RMS 的 6 秒窗口，在本地重新导出个性化 ONNX，并执行 100 块 Torch/ONNX 数值对照。只有 `PASS` 才会替换当前 enrollment 和 ONNX；旧文件会加时间戳备份。失败候选和报告留在本地供诊断，不会上传。
 
+注册必须使用日常实际输入设备。2026-09-21 实测中，使用 MacBook microphone 的旧注册搭配有线耳机输入时，TSE 输出无法稳定被豆包识别；改用同一有线耳机重新注册并通过数值校验后，基线、断链和恢复句均可识别。换电脑不必必然重训模型，但换麦克风后应重新注册并做短基线验收。
+
 ## 已知限制
 
 - REAL-TSE 源码/权重尚无足够清晰的统一分发许可，当前只作为本机原型，不能宣称可商业分发。
 - Mac A 30 分钟峰值 RSS 约 1.03 GB，后续应优化；Mac B M1 不能使用这套性能结论。
-- 真实可拔插耳机的断连/重连仍待 AT-10 补测。
+- 当前独立设备清单检查每秒启动一个短命 Python 进程，优先保证 CLI 原型的隐私边界；它使本次平均 CPU 使用高于此前稳定性基线。原生应用阶段应改成 CoreAudio 设备属性监听，避免轮询进程开销。
 - 当前是 CLI MVP，没有菜单栏常驻状态；终端必须保持可见，尤其是连续优先模式的警告。
 - 当前 `Control-C` 会安全停止并释放麦克风；独立的“暂停后原地继续”按钮尚未实现，属于原生 UI 阶段待办。
 

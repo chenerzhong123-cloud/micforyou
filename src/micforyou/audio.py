@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from fractions import Fraction
+import json
 from pathlib import Path
 import queue
+import subprocess
+import sys
 import time
 from typing import Any, Iterable
 
@@ -44,6 +47,37 @@ def list_devices() -> list[Device]:
     return [Device.from_sounddevice(i, dict(item)) for i, item in enumerate(sd.query_devices())]
 
 
+def list_devices_fresh(timeout_seconds: float = 2.0) -> list[Device]:
+    """Return CoreAudio devices from a short-lived process.
+
+    During a hot unplug, PortAudio can keep the current process's device
+    inventory alive even after its input stream has failed.  A child process
+    gets a new CoreAudio inventory and is used only to decide whether the
+    explicitly configured route may be reopened.  It never selects a fallback
+    device or carries audio.
+    """
+    if timeout_seconds <= 0:
+        raise ValueError("fresh device-query timeout must be positive")
+    probe = (
+        "import json, sounddevice as sd; "
+        "print(json.dumps([dict(item) for item in sd.query_devices()]))"
+    )
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+        raw_devices = json.loads(completed.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"fresh CoreAudio device query failed: {error}") from error
+    if not isinstance(raw_devices, list):
+        raise RuntimeError("fresh CoreAudio device query returned invalid data")
+    return [Device.from_sounddevice(i, dict(item)) for i, item in enumerate(raw_devices)]
+
+
 def resolve_device(
     devices: Iterable[Device], selector: str, direction: str
 ) -> Device:
@@ -77,6 +111,56 @@ def ensure_safe_route(input_device: Device, output_device: Device) -> None:
         raise ValueError(
             f"output must be {BLACKHOLE_NAME!r}, got {output_device.name!r}"
         )
+
+
+class InputRouteMonitor:
+    """Detect whether the explicitly selected physical input disappears.
+
+    CoreAudio can keep an existing stream alive by changing its physical route
+    after a headset is unplugged.  Sounddevice does not expose that reroute in
+    the callback, so the controller polls the device inventory outside the
+    real-time thread.  This monitor reports only inventory state; it never
+    changes an audio route or starts a fallback stream.
+    """
+
+    def __init__(self, expected: Device):
+        if expected.max_input_channels <= 0:
+            raise ValueError("route monitor requires an input device")
+        self.expected_name = expected.name
+        self._available = True
+        self.events: list[dict[str, Any]] = []
+
+    def observe(self, devices: Iterable[Device], now: float | None = None) -> dict | None:
+        observed_at = time.monotonic() if now is None else now
+        try:
+            current = resolve_device(devices, self.expected_name, "input")
+        except ValueError as error:
+            available = False
+            detail = str(error)
+            device = None
+        else:
+            available = True
+            detail = None
+            device = current.to_dict()
+        if available == self._available:
+            return None
+        self._available = available
+        event = {
+            "elapsed_seconds": observed_at,
+            "state": "available" if available else "unavailable",
+            "expected_input_device": self.expected_name,
+            "device": device,
+            "detail": detail,
+        }
+        self.events.append(event)
+        return event
+
+    def stats(self) -> dict:
+        return {
+            "expected_input_device": self.expected_name,
+            "currently_available": self._available,
+            "events": list(self.events),
+        }
 
 
 def resample(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:

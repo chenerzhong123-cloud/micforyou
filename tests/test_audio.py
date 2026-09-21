@@ -1,7 +1,16 @@
+import json
+
 import numpy as np
 import pytest
 
-from micforyou.audio import Device, ensure_safe_route, map_channels, resolve_device
+import micforyou.audio as audio
+from micforyou.audio import (
+    Device,
+    InputRouteMonitor,
+    ensure_safe_route,
+    map_channels,
+    resolve_device,
+)
 from micforyou.evaluation import create_mixtures, si_sdr
 
 
@@ -35,6 +44,58 @@ def test_blackhole_cannot_be_selected_as_physical_input() -> None:
 
     with pytest.raises(ValueError, match="physical input"):
         record_input(device(2, "BlackHole 2ch", 2, 2), None, 0)  # type: ignore[arg-type]
+
+
+def test_input_route_monitor_reports_unplug_and_restore() -> None:
+    headset = device(1, "External Microphone", 1, 0)
+    built_in = device(2, "MacBook Air Microphone", 1, 0)
+    monitor = InputRouteMonitor(headset)
+
+    assert monitor.observe([headset, built_in], now=10.0) is None
+    unavailable = monitor.observe([built_in], now=11.0)
+    assert unavailable is not None
+    assert unavailable["state"] == "unavailable"
+    assert unavailable["expected_input_device"] == "External Microphone"
+    assert monitor.observe([built_in], now=12.0) is None
+    restored = monitor.observe([headset, built_in], now=13.0)
+    assert restored is not None
+    assert restored["state"] == "available"
+    assert [event["state"] for event in monitor.stats()["events"]] == [
+        "unavailable",
+        "available",
+    ]
+
+
+def test_fresh_device_query_uses_child_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object):
+        recorded["command"] = command
+        recorded.update(kwargs)
+        return type(
+            "Completed",
+            (),
+            {
+                "stdout": json.dumps(
+                    [
+                        {
+                            "name": "External Microphone",
+                            "hostapi": 0,
+                            "max_input_channels": 1,
+                            "max_output_channels": 0,
+                            "default_samplerate": 48_000.0,
+                        }
+                    ]
+                )
+            },
+        )()
+
+    monkeypatch.setattr(audio.subprocess, "run", fake_run)
+    devices = audio.list_devices_fresh(1.5)
+
+    assert [item.name for item in devices] == ["External Microphone"]
+    assert recorded["timeout"] == 1.5
+    assert "sounddevice" in " ".join(recorded["command"])
 
 
 def test_mono_is_mapped_to_both_blackhole_channels() -> None:

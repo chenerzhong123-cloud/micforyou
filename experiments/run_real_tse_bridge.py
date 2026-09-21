@@ -27,7 +27,13 @@ import torchaudio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from micforyou.audio import ensure_safe_route, list_devices, resolve_device
+from micforyou.audio import (
+    InputRouteMonitor,
+    ensure_safe_route,
+    list_devices,
+    list_devices_fresh,
+    resolve_device,
+)
 from micforyou.bridging import (
     BridgeEngine,
     CallbackLivenessMonitor,
@@ -214,6 +220,21 @@ def main() -> None:
         default="silence",
         help="after recovery is exhausted, latch silence or explicitly pass raw mic",
     )
+    parser.add_argument(
+        "--route-change-policy",
+        choices=("continue_tse", "silence_on_route_change"),
+        default="continue_tse",
+        help=(
+            "when the selected physical input disappears, either wait silently "
+            "and reopen that explicit TSE route, or enter terminal fault-silence"
+        ),
+    )
+    parser.add_argument(
+        "--route-reconnect-timeout-seconds",
+        type=float,
+        default=120.0,
+        help="maximum silent wait for the selected input to reappear",
+    )
     parser.add_argument("--result", type=Path, required=True)
     args = parser.parse_args()
 
@@ -233,6 +254,8 @@ def main() -> None:
         raise SystemExit("--recovery-window-seconds must be positive")
     if args.restart_delay_ms < 0:
         raise SystemExit("--restart-delay-ms must be >= 0")
+    if args.route_reconnect_timeout_seconds <= 0:
+        raise SystemExit("--route-reconnect-timeout-seconds must be positive")
     if args.prefill_ms < 0 or args.prefill_ms > args.queue_ms:
         raise SystemExit("--prefill-ms must be between zero and --queue-ms")
 
@@ -298,9 +321,29 @@ def main() -> None:
     recovery_breaker = RecoveryCircuitBreaker(
         args.auto_recoveries, args.recovery_window_seconds
     )
+    route_events: list[dict] = []
+    route_reconnections = 0
+    route_reconnect_wait_seconds = 0.0
 
     while True:
         attempt_started = time.monotonic()
+        # Device indexes can change when a headset is unplugged. Resolve the
+        # configured names before every open; never reuse an index that may
+        # now designate the built-in microphone.
+        route_open_error: str | None = None
+        active_input_device = input_device
+        active_output_device = output_device
+        try:
+            active_devices = list_devices()
+            active_input_device = resolve_device(
+                active_devices, args.input_device, "input"
+            )
+            active_output_device = resolve_device(
+                active_devices, args.output_device, "output"
+            )
+            ensure_safe_route(active_input_device, active_output_device)
+        except ValueError as error:
+            route_open_error = f"selected route unavailable before open: {error}"
         # A recovery starts from fresh resamplers, STFT/OLA buffers, recurrent
         # state, queues and timestamps. No pre-stall audio can reach BlackHole.
         if args.backend == "onnx":
@@ -328,23 +371,32 @@ def main() -> None:
         capture_enabled.set()
         statuses: list[str] = []
         callback_count = 0
+        input_underflow_count = 0
+        input_interrupted = threading.Event()
         startup_silence_frames = 0
         underrun_frames = 0
         output_started = False
         position_in = 0
         liveness = CallbackLivenessMonitor(args.callback_timeout_ms / 1000)
+        route_monitor = InputRouteMonitor(active_input_device)
+        next_fresh_route_check = time.monotonic()
         pressure_samples: list[dict] = []
         next_pressure_sample = time.monotonic()
         stalled = False
+        route_lost = False
         stream_latency = None
 
         def callback(indata, outdata, frames, time_info, status) -> None:
-            nonlocal callback_count, startup_silence_frames, underrun_frames
+            nonlocal callback_count, input_underflow_count
+            nonlocal startup_silence_frames, underrun_frames
             nonlocal output_started, position_in
             liveness.observe()
             callback_count += 1
             if status:
                 statuses.append(str(status))
+                if getattr(status, "input_underflow", False):
+                    input_underflow_count += 1
+                    input_interrupted.set()
             outdata.fill(0)
             arrival = time.perf_counter()
             if capture_enabled.is_set():
@@ -367,8 +419,10 @@ def main() -> None:
                     startup_silence_frames += frames - written
 
         try:
+            if route_open_error is not None:
+                raise RuntimeError(route_open_error)
             with sd.Stream(
-                device=(input_device.index, output_device.index),
+                device=(active_input_device.index, active_output_device.index),
                 samplerate=sample_rate,
                 blocksize=args.audio_block,
                 channels=(1, 2),
@@ -397,6 +451,63 @@ def main() -> None:
                         engine.latch_fault(
                             f"audio callbacks stalled for {callback_age:.3f} seconds"
                         )
+                    if input_interrupted.is_set() and not route_lost:
+                        route_lost = True
+                        capture_enabled.clear()
+                        route_events.append(
+                            {
+                                "elapsed_seconds": now - started,
+                                "state": "input_interrupted",
+                                "expected_input_device": args.input_device,
+                                "device": None,
+                                "detail": (
+                                    "PortAudio reported input underflow; "
+                                    "silencing before an implicit route fallback"
+                                ),
+                            }
+                        )
+                        engine.latch_fault(
+                            "input device interrupted; silencing until "
+                            "the explicit route can be reopened"
+                        )
+                    if now >= next_fresh_route_check and not route_lost:
+                        next_fresh_route_check = now + 1.0
+                        try:
+                            route_devices = list_devices_fresh()
+                        except RuntimeError as error:
+                            route_lost = True
+                            capture_enabled.clear()
+                            route_events.append(
+                                {
+                                    "elapsed_seconds": now - started,
+                                    "state": "inventory_error",
+                                    "expected_input_device": args.input_device,
+                                    "device": None,
+                                    "detail": str(error),
+                                }
+                            )
+                            engine.latch_fault(
+                                "cannot verify selected input route; silencing until "
+                                "a fresh inventory confirms it can be reopened"
+                            )
+                        else:
+                            route_event = route_monitor.observe(route_devices, now=now)
+                            if route_event is not None:
+                                route_event["elapsed_seconds"] = now - started
+                                route_events.append(route_event)
+                                print(
+                                    "INPUT ROUTE "
+                                    f"{route_event['state']}: "
+                                    f"{route_event['expected_input_device']}",
+                                    flush=True,
+                                )
+                                if route_event["state"] == "unavailable":
+                                    route_lost = True
+                                    capture_enabled.clear()
+                                    engine.latch_fault(
+                                        "selected input route disappeared; silencing until "
+                                        "the explicit route can be reopened"
+                                    )
                 capture_enabled.clear()
                 engine.finish(timeout=10)
                 drain_deadline = time.monotonic() + 2
@@ -425,7 +536,13 @@ def main() -> None:
             "startup_silence_ms": startup_silence_frames / sample_rate * 1000,
             "underrun_ms": underrun_frames / sample_rate * 1000,
             "stream_statuses": statuses,
+            "input_underflow_count": input_underflow_count,
             "callback_liveness": liveness.stats(),
+            "input_route": route_monitor.stats(),
+            "active_input_device": active_input_device.to_dict(),
+            "active_output_device": active_output_device.to_dict(),
+            "route_lost": route_lost,
+            "route_reconnect_planned": False,
             "queue_pressure_5s": pressure_samples,
             "errors": list(engine.errors),
             "started_elapsed_seconds": attempt_started - started,
@@ -436,6 +553,66 @@ def main() -> None:
 
         duration_finished = deadline is not None and time.monotonic() >= deadline
         faulted = engine.fault.is_set()
+        if (
+            route_lost
+            and args.route_change_policy == "silence_on_route_change"
+            and not interrupted
+        ):
+            # A route-loss policy must not fall through to the generic fault
+            # recovery path, which could reopen a stale device index.
+            break
+        if route_lost and args.route_change_policy == "continue_tse" and not interrupted:
+            reconnect_started = time.monotonic()
+            reconnect_deadline = reconnect_started + args.route_reconnect_timeout_seconds
+            if deadline is not None:
+                reconnect_deadline = min(reconnect_deadline, deadline)
+            next_inventory_refresh = reconnect_started
+            while time.monotonic() < reconnect_deadline:
+                try:
+                    now = time.monotonic()
+                    # PortAudio's in-process device list was stale after a
+                    # hot unplug on this Mac. A short-lived process receives
+                    # a fresh CoreAudio inventory; do not reopen until it
+                    # confirms the same explicitly selected device exists.
+                    if now >= next_inventory_refresh:
+                        sd._terminate()
+                        sd._initialize()
+                        next_inventory_refresh = now + 1.0
+                    reconnect_devices = list_devices_fresh()
+                    restored_input = resolve_device(
+                        reconnect_devices, args.input_device, "input"
+                    )
+                    restored_output = resolve_device(
+                        reconnect_devices, args.output_device, "output"
+                    )
+                    ensure_safe_route(restored_input, restored_output)
+                except (ValueError, RuntimeError, sd.PortAudioError):
+                    sd.sleep(1000)
+                    continue
+                waited = time.monotonic() - reconnect_started
+                route_reconnect_wait_seconds += waited
+                route_reconnections += 1
+                route_events.append(
+                    {
+                        "elapsed_seconds": time.monotonic() - started,
+                        "state": "reconnected",
+                        "expected_input_device": args.input_device,
+                        "device": restored_input.to_dict(),
+                        "detail": f"reopened explicit TSE route after {waited:.3f}s",
+                    }
+                )
+                attempt["route_reconnect_planned"] = True
+                print(
+                    f"INPUT ROUTE reconnected: {args.input_device}; reopening TSE.",
+                    flush=True,
+                )
+                break
+            if attempt["route_reconnect_planned"]:
+                continue
+            route_reconnect_wait_seconds += time.monotonic() - reconnect_started
+            # Do not consume the ordinary inference-fault recovery budget or
+            # open a stale input index while the selected device is absent.
+            break
         if interrupted or duration_finished or not faulted:
             break
         if not recovery_breaker.allow():
@@ -535,6 +712,7 @@ def main() -> None:
         "status": final_status,
         "final_mode": final_mode,
         "fault_policy": args.fault_policy,
+        "route_change_policy": args.route_change_policy,
         "runtime": runtime_metadata,
         "enrollment_selection": enrollment_selection,
         "input_device": input_device.name,
@@ -583,6 +761,12 @@ def main() -> None:
             status for attempt in attempts for status in attempt["stream_statuses"]
         ],
         "callback_liveness": final_attempt["callback_liveness"],
+        "input_route": {
+            "expected_input_device": args.input_device,
+            "events": route_events,
+            "reconnections": route_reconnections,
+            "reconnect_wait_seconds": route_reconnect_wait_seconds,
+        },
         "automatic_recovery": recovery_breaker.stats(),
         "faults_recovered": recovered_faults,
         "callback_stalls_recovered": recovered_stalls,
