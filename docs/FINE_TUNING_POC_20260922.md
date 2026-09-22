@@ -1,6 +1,6 @@
 # 个性化微调 PoC（2026-09-22）
 
-状态：`4-STEP CONTROLLED PASS / REAL-OFFICE HUMAN REVIEW REQUIRED / 40-STEP REJECTED`。
+状态：`4-STEP REAL-OFFICE REJECTED / 40-STEP REJECTED / CURRENT ALPHA UNCHANGED`。
 
 ## 数据边界
 
@@ -35,7 +35,7 @@
 | Q02 本人缺席 | -2.43 dB | -4.74 dB |
 | Q03 交替说话 | -1.83 dB | -4.17 dB |
 
-Q02 方向正确，但 Q01 也额外降低约 4.1 dB，因此候选必须经过人工审听；在“本人完整”确认前不得继续实时或豆包验收。
+Q02 的 RMS 方向看似正确，但 Q01 也额外降低约 4.1 dB，因此进行了人工审听。用户确认 Q01 中本人的声音也被去掉一部分；Q02 只有略微减少，效果不明显、近似相同。说明额外衰减主要不是有效的身份选择性改善。4-step 候选因此违反“本人完整”硬门槛并被拒绝，不进入豆包或实时验收。
 
 ## 40-step 候选
 
@@ -43,5 +43,6 @@ Q02 方向正确，但 Q01 也额外降低约 4.1 dB，因此候选必须经过�
 
 ## 当前判定
 
-4-step 是研究候选，不是升级。下一动作仅为 Q01/Q02 人工 A/B：若本人不完整，立即拒绝；若本人完整且 Q02 他人进一步减少，才补 Q03、豆包文字和 ONNX 实时回归。当前 Experimental Alpha 保持不变。
+本轮“只训练最终 mask projection + 当前小数据/loss”路线已经关闭：4-step 在真实办公室伤害本人而未明显降低他人，40-step 在独立受控验证也退化。继续增加 steps 或在同一验证集上调参会扩大过拟合，不再进行。当前 Experimental Alpha 保持不变。
 
+后续若重启训练，必须有实质变化，例如更丰富的本人跨设备/房间语音、多个知情干扰说话人、显式 target-presence/identity loss，或解冻不同模块并使用新的独立验证集；不能把当前数据重复调参包装成进展。优先级重新回到更强、可审计的 causal waveform TSE 模型 source gate。

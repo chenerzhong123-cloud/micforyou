@@ -43,7 +43,7 @@ The accepted next phase has two separate tracks: keep the current Mac A build as
 
 All future quality candidates must use the frozen, private [real-environment regression protocol](docs/QUALITY_REGRESSION.md). The audio remains outside Git; only the protocol and evidence boundary are versioned.
 
-The first bounded personalized fine-tuning experiment is documented in [the 2026-09-22 PoC report](docs/FINE_TUNING_POC_20260922.md). The 40-step candidate was rejected; the 4-step candidate remains isolated pending held-out human review and has not replaced the Experimental Alpha.
+The first bounded personalized fine-tuning experiment is documented in [the 2026-09-22 PoC report](docs/FINE_TUNING_POC_20260922.md). Both candidates were rejected: 40 steps regressed controlled validation, while the 4-step model removed part of the user's voice without a meaningful target-absent improvement. The Experimental Alpha remains unchanged.
 
 Before enabling the live bridge on any machine, run the pre-launch benchmark and paced latency check described in [the performance guide](docs/PERFORMANCE_GUIDE.md); the live bridge has no default `--frames-per-chunk` by design.
 
