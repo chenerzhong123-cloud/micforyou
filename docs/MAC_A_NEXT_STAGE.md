@@ -2,7 +2,7 @@
 
 日期：2026-09-19。当前范围：以 Mac A（M5）完成可用原型；Mac B（M1）只作为后续兼容性与性能优化验收，不阻塞本阶段。
 
-> 2026-09-22 更新：下列运行时工作已经完成，真实耳机拔插也已通过。当前进入质量迭代：冻结已通过的 Experimental Alpha，同时离线寻找更强 causal waveform TSE；若没有可用 checkpoint，再按[微调可行性与数据授权门槛](FINE_TUNING_FEASIBILITY.md)进行受限 PoC。真实办公室效果已获用户主观接受，但目标缺席硬门仍失败。
+> 2026-09-22 最终更新：下列运行时工作及真实耳机拔插均已完成。质量迭代中的替代模型复筛、受限微调 PoC 和独立 target-presence gate 也已执行，但没有候选通过 Q01/Q02。当前 Experimental Alpha 冻结不变；真实办公室效果获用户主观接受，目标缺席硬门仍失败。继续条件见本文末尾。
 
 ## 当前固定基线
 
@@ -19,10 +19,17 @@
 4. **Mac A 120 秒回归——ONNX 工程回归通过，用户语音待测**：`8 frames + 1 ORT thread + 100 ms prefill + 6 秒 enrollment` 完成真实设备回归；本人语音与豆包交互留到下一项集中验证。
 5. **Mac A 30 分钟豆包交互验收——通过**：ONNX 链路连续完成 1800.67 秒；三次豆包启停均有完整文字。工程指标见下文。
 6. **句尾 A/B——通过**：物理麦克风与 TSE/BlackHole 均保留首字和最后的“尾音”；两边都出现豆包的标点与“停止录音时”措辞变化，没有 TSE 新增截尾证据。
-7. **物理故障演练——部分完成**：推理异常、队列故障、恢复熔断和可选 passthrough 已自动验证；当前没有可拔插耳机，真实设备拔插仍待后续补测。
+7. **物理故障演练——通过**：推理异常、队列故障、恢复熔断、可选 passthrough 及真实耳机拔出/插回均已验证；恢复只重开显式选择的原设备，不自动换麦。
 8. **Stage C 判定**：汇总 AT-07～AT-10。达到标准才改为 `PASS`；否则保留具体失败项，不用界面包装。
 9. **进入 Stage D**：提供最小启停、暂停、设备选择、重新注册、状态/错误、恢复原输入和卸载说明；不申请 Accessibility，不实现 ASR。
 10. **后续性能升级轨道**：在稳定接口后替换/增加 TSE Adapter 和 runtime profile，按每台设备先 benchmark 再选 backend/chunk；Mac B 重新从质量门和实时门开始，不把 Mac A 参数直接外推。
+
+## 2026-09-22 质量迭代终点与重启条件
+
+- 新的 causal waveform TSE：只有可固定 revision/hash、许可可审计、输出 waveform 且支持本地 enrollment 的新 checkpoint 才重启 source gate。旧 48 kHz Hugging Face 页面仍只在搜索缓存可见，实际 API 返回 401；不能作为模型来源。
+- 当前 REAL-TSE 微调：4-step 伤害本人且 Q02 近似不变，40-step 受控验证退化；不再增加 steps 或围绕同一小数据调参。
+- presence gate：`nomo-pvad release-1.1` 在 Q02 的 P(target) 分布高于 Q01，threshold 0.5 时 false accept 为 90.24%；候选已淘汰，不接入实时链路。
+- 下一次可重启质量研发的最小新增输入是以下任一项：新的合格公开 checkpoint；或更多本人跨麦克风/房间录音，加上知情同意的多位干扰说话人和新的独立验证集，以支持实质不同的 loss/module 训练。现有真实办公室 Q01–Q03 永远保持 held-out，不转作训练数据。
 
 ## 下一次需要用户集中配合的时点
 

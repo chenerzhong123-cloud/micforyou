@@ -39,6 +39,8 @@ REAL-TSE 官方 `tfmap_context_causal_100` 是已通过离线质量和 stateful 
 
 2026-09-21 的真实办公室验收已把“目标缺席泛化”从未知项变成已知失败：当前 REAL-TSE checkpoint 保留本人片段的主要语义，但对一段不含本人的同事发言仅衰减约 2.4 dB，豆包仍输出完整可辨认语句。运行时通过不能覆盖该质量失败。
 
+2026-09-22 的两条补救实验也已按同一 held-out 门槛关闭。只训练最终 mask projection 的 4-step 候选会删除部分本人声音，却没有明显改善目标缺席；40-step 候选在独立受控验证已退化。独立 `nomo-pvad` presence gate 虽然 source、公开示例和 Mac A 性能通过，但把目标缺席 Q02 的 90.24% 音频块误判为本人（threshold 0.5），无法用阈值或 hysteresis 修复。二者均未接入实时链路，当前 Experimental Alpha 未改变。
+
 ## 实施关卡
 
 1. A：用已知语音文件经 BlackHole 输入豆包，再做麦克风直通。通过后才集成 TSE。
