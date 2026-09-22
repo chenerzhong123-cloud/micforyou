@@ -41,6 +41,8 @@ uv run micforyou stop    # 释放麦克风，并记为 STOPPED
 
 后台控制状态保存在 `~/Library/Application Support/MicForYou/state.json`；日志只含运行事件和指标，不含音频或豆包文字。`pause` 不是在可能污染的模型 state 上冻结线程，而是安全关闭流；`resume` 会重新建立 resampler、STFT/OLA、recurrent state 和有界队列。
 
+同一组操作已由 [原生菜单栏应用](MENU_BAR_APP.md)封装，包括实体麦克风选择和重新注册确认。菜单栏退出不会暗中停止一个仍在运行的隐私优先 bridge，按钮会明确显示“退出界面（过滤继续）”。
+
 仍保留 `uv run micforyou run` 作为前台诊断模式，可用 `Control-C` 停止。
 
 ## 更换实体麦克风

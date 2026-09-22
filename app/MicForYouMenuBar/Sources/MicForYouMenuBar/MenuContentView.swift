@@ -18,6 +18,16 @@ struct MenuContentView: View {
             qualityNotice
             configuration
             controls
+            Button("重新注册声音…") { model.confirmEnrollment = true }
+                .disabled(model.busy || model.status?.ready != true || model.status?.runtime.isActive == true)
+                .alert("重新注册声音", isPresented: $model.confirmEnrollment) {
+                    Button("取消", role: .cancel) {}
+                    Button("开始 45 秒录音") {
+                        Task { await model.perform("enroll") }
+                    }
+                } message: {
+                    Text("请使用当前日常麦克风，在安静环境自然朗读。通过 ONNX 正确性检查后才会替换现有注册；失败不会覆盖旧版本。")
+                }
             if let error = model.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
@@ -116,7 +126,9 @@ struct MenuContentView: View {
                 Button("查看日志") { model.openLog() }
             }
             Spacer()
-            Button("退出界面") { NSApplication.shared.terminate(nil) }
+            Button(model.status?.runtime.isActive == true ? "退出界面（过滤继续）" : "退出界面") {
+                NSApplication.shared.terminate(nil)
+            }
         }
         .font(.caption)
     }

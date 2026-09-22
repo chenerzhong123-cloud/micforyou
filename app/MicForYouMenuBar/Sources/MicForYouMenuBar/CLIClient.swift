@@ -64,23 +64,29 @@ struct CLIClient: Sendable {
     func run(_ arguments: [String]) async throws -> Data {
         try await Task.detached(priority: .userInitiated) {
             let process = Process()
-            let output = Pipe()
-            let errors = Pipe()
+            let outputURL = FileManager.default.temporaryDirectory
+                .appending(path: "micforyou-ui-\(UUID().uuidString).log")
+            FileManager.default.createFile(atPath: outputURL.path, contents: nil)
+            let output = try FileHandle(forWritingTo: outputURL)
+            defer {
+                try? output.close()
+                try? FileManager.default.removeItem(at: outputURL)
+            }
             process.executableURL = executable
             process.arguments = arguments
             process.currentDirectoryURL = projectRoot
             process.standardInput = FileHandle.nullDevice
             process.standardOutput = output
-            process.standardError = errors
+            process.standardError = output
             try process.run()
             process.waitUntilExit()
-            let stdout = output.fileHandleForReading.readDataToEndOfFile()
-            let stderr = errors.fileHandleForReading.readDataToEndOfFile()
+            try output.synchronize()
+            let rendered = try Data(contentsOf: outputURL)
             guard process.terminationStatus == 0 else {
-                let message = String(decoding: stderr + stdout, as: UTF8.self)
+                let message = String(decoding: rendered, as: UTF8.self)
                 throw CLIError.commandFailed(process.terminationStatus, message)
             }
-            return stdout
+            return rendered
         }.value
     }
 }

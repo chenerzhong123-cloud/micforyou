@@ -381,6 +381,7 @@ def command_run(args: argparse.Namespace) -> None:
 
 
 def command_enroll(args: argparse.Namespace) -> None:
+    require_inactive(args.config)
     config = load_config(args.config)
     source = resolve_device(list_devices(), config.input_device, "input")
     stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")

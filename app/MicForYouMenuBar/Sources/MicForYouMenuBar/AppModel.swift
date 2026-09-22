@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
     @Published var selectedInput = ""
     @Published var busy = false
     @Published var errorMessage: String?
+    @Published var confirmEnrollment = false
 
     private var client: CLIClient?
 
