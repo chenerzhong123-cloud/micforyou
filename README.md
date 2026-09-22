@@ -45,6 +45,8 @@ All future quality candidates must use the frozen, private [real-environment reg
 
 The first bounded personalized fine-tuning experiment is documented in [the 2026-09-22 PoC report](docs/FINE_TUNING_POC_20260922.md). Both candidates were rejected: 40 steps regressed controlled validation, while the 4-step model removed part of the user's voice without a meaningful target-absent improvement. The Experimental Alpha remains unchanged.
 
+An independent [target-presence auxiliary-gate PoC](docs/TARGET_PRESENCE_GATE_POC_20260922.md) was also rejected before integration: its public example and Mac A runtime passed, but it classified 90.24% of the held-out target-absent Q02 chunks as the target at threshold 0.5. No gate audio was generated and the live chain remains unchanged.
+
 Before enabling the live bridge on any machine, run the pre-launch benchmark and paced latency check described in [the performance guide](docs/PERFORMANCE_GUIDE.md); the live bridge has no default `--frames-per-chunk` by design.
 
 Mac B's returned thread sweep and ONNX CPU results are recorded in [the 2026-09-18 runtime report](docs/MAC_B_RUNTIME_RESULTS_20260918.md). INT8 correctness failed. The corrected CoreML auto/four-thread matrix also failed with best RTF 1.052, so `CURRENT REAL-TSE ON M1: STOP`; see [the final thread recheck](docs/MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md). The next-model source gate and screened candidates are recorded in [the lightweight TSE screening](docs/LIGHTWEIGHT_TSE_SCREENING_20260918.md).

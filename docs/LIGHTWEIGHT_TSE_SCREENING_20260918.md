@@ -222,6 +222,7 @@ Before packaging, scan for private absolute paths and for `.wav`, `.flac`, `.m4a
 | OpenSpeakerBeam-SS | previously rejected | full-sequence behavior, clipping and target-absent amplification in this project's earlier tests |
 | VoiceFilter-Lite | incompatible output contract | filters ASR features and does not provide the waveform required by BlackHole -> Doubao |
 | DENSE / WeSep alternatives without weights | source gate fail | no ready, pinned personalized checkpoint; from-scratch training is outside the spec |
+| `tuya/nomo-pvad` release 1.1 | rejected as auxiliary presence gate | source/public smoke/runtime pass, but target-absent Q02 is classified as target in 90.24% of chunks at threshold 0.5; it is a detector, not a TSE replacement |
 
 Ordinary noise suppressors such as DeepFilterNet remain out of scope as substitutes: they remove noise but do not isolate an enrolled speaker during overlapping speech.
 
