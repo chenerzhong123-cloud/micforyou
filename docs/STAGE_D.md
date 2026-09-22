@@ -18,27 +18,51 @@ explicit physical microphone → REAL-TSE/ONNX → BlackHole 2ch → 豆包输�
 
 配置已通过 `status` 和 5 秒真实设备 smoke test。它引用本地 enrollment、个性化 ONNX 和官方 REAL-TSE 虚拟环境；这些私有或大型文件不会上传 GitHub。
 
-## 每次使用
+## 每次使用（后台控制流程）
 
 1. 在豆包输入法中选择 `BlackHole 2ch`。
 2. 在项目目录运行：
 
 ```bash
 uv run micforyou status
-uv run micforyou run
+uv run micforyou start
 ```
 
-3. `status` 必须显示 `"ready": true`。运行窗口保持打开。
-4. 停止时按 `Control-C`，然后按需把豆包麦克风恢复为日常物理麦克风。
+3. `status` 必须显示 `"ready": true`；启动后 `runtime.bridge_health.status` 会从 `STARTING` 变为 `RUNNING`。
+4. 后台运行期间可关闭 Terminal。控制命令为：
+
+```bash
+uv run micforyou pause   # 释放麦克风，并记为 PAUSED
+uv run micforyou resume  # 重建全部 TSE 流状态后继续
+uv run micforyou stop    # 释放麦克风，并记为 STOPPED
+```
+
+5. 停止后按需把豆包麦克风恢复为日常物理麦克风。
+
+后台控制状态保存在 `~/Library/Application Support/MicForYou/state.json`；日志只含运行事件和指标，不含音频或豆包文字。`pause` 不是在可能污染的模型 state 上冻结线程，而是安全关闭流；`resume` 会重新建立 resampler、STFT/OLA、recurrent state 和有界队列。
+
+仍保留 `uv run micforyou run` 作为前台诊断模式，可用 `Control-C` 停止。
+
+## 更换实体麦克风
+
+先停止或暂停，再列出设备并只修改输入项：
+
+```bash
+uv run micforyou devices
+uv run micforyou set-input "MacBook Air Microphone"
+uv run micforyou status
+```
+
+软件绝不会因为原设备消失而自动执行这一步。换麦克风后 `set-input` 会提示需要重新注册/短基线；运行 `uv run micforyou enroll` 后再开始日常使用。
 
 MicForYou 从不修改系统默认输入，所以“恢复原输入”只涉及豆包自己的设备选择。
 
 ## 故障策略
 
 - `silence`：默认、隐私优先。有限恢复仍失败后保持静音。
-- `passthrough`：连续优先。有限恢复仍失败后，把同一个已选实体麦克风原音送到 BlackHole。终端会立即并每 30 秒重复显示 `UNFILTERED` 警告，报告标记 `degraded=true` 和 `final_mode=passthrough`。
+- `passthrough`：连续优先。有限恢复仍失败后，把同一个已选实体麦克风原音送到 BlackHole。终端会立即并每 30 秒重复显示 `UNFILTERED` 警告，报告标记 `degraded=true` 和 `final_mode=passthrough`。当前只允许前台 `run` 使用；后台 `start` 会拒绝该策略，因为后台日志不能代替常驻警告界面。
 
-切换策略需重新运行一次 `configure`，不能在运行中静默切换。不会自动选择另一支麦克风。
+停止后可运行 `uv run micforyou set-policy silence|passthrough` 切换策略，不能在运行中静默切换。不会自动选择另一支麦克风。
 
 默认 `continue_tse` 会在已选物理输入消失时保持静音、等待最多 120 秒；同名输入重新出现后，以重新解析的设备索引重开同一条 TSE → BlackHole 链路。运行中同时检查 PortAudio `input_underflow` 和短命独立进程取得的新 CoreAudio 设备清单；无法确认原设备仍在时按失败关闭处理。它不依赖 macOS 将旧流自动接到内置麦克风，也不会 raw passthrough。若有意改用另一支麦克风，请先用 `configure` 明确更改 `--input-device`，再开始新的运行。
 
@@ -72,8 +96,8 @@ uv run micforyou enroll
 - REAL-TSE 源码/权重尚无足够清晰的统一分发许可，当前只作为本机原型，不能宣称可商业分发。
 - Mac A 30 分钟峰值 RSS 约 1.03 GB，后续应优化；Mac B M1 不能使用这套性能结论。
 - 当前独立设备清单检查每秒启动一个短命 Python 进程，优先保证 CLI 原型的隐私边界；它使本次平均 CPU 使用高于此前稳定性基线。原生应用阶段应改成 CoreAudio 设备属性监听，避免轮询进程开销。
-- 当前是 CLI MVP，没有菜单栏常驻状态；终端必须保持可见，尤其是连续优先模式的警告。
-- 当前 `Control-C` 会安全停止并释放麦克风；独立的“暂停后原地继续”按钮尚未实现，属于原生 UI 阶段待办。
+- 当前是具备后台生命周期控制的 CLI MVP，菜单栏 UI 尚未实现。隐私优先后台模式可关闭 Terminal；连续优先仍要求前台可见。
+- `pause/resume` 已实现为安全释放与完整重建，不复用旧的流式模型状态。
 
 ## 卸载/恢复
 

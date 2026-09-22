@@ -119,10 +119,13 @@ def required_paths(config: ProductConfig) -> dict[str, Path]:
 
 
 def build_bridge_command(
-    config: ProductConfig, duration: float, result: Path
+    config: ProductConfig,
+    duration: float,
+    result: Path,
+    health_file: Path | None = None,
 ) -> list[str]:
     config.validate()
-    return [
+    command = [
         str(config.runtime_python),
         str(config.project_root / "experiments" / "run_real_tse_bridge.py"),
         "--repo",
@@ -164,3 +167,6 @@ def build_bridge_command(
         "--result",
         str(result),
     ]
+    if health_file is not None:
+        command.extend(["--health-file", str(health_file)])
+    return command

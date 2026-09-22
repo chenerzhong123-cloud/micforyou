@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from datetime import datetime
 import json
 from pathlib import Path
@@ -16,6 +17,14 @@ from .audio import (
     probe_loopback,
     record_input,
     resolve_device,
+)
+from .control import (
+    default_log_dir,
+    default_state_path,
+    load_state,
+    refresh_state,
+    start_managed_process,
+    stop_managed_process,
 )
 from .evaluation import create_mixtures, score_output
 from .product import (
@@ -173,6 +182,29 @@ def product_status(config: ProductConfig) -> dict[str, Any]:
     }
 
 
+def runtime_status(config_path: Path) -> dict[str, Any]:
+    state_path = default_state_path(config_path)
+    state = load_state(state_path)
+    if state is None:
+        return {
+            "status": "STOPPED",
+            "state_file": str(state_path),
+            "detail": "background bridge has not been started",
+        }
+    state = refresh_state(state, state_path)
+    health = None
+    if state.health_path and Path(state.health_path).exists():
+        try:
+            health = json.loads(Path(state.health_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            health = {"status": "UNKNOWN", "detail": "health file is unreadable"}
+    return {
+        **state.to_dict(),
+        "state_file": str(state_path),
+        "bridge_health": health,
+    }
+
+
 def command_configure(args: argparse.Namespace) -> None:
     config = ProductConfig(
         input_device=args.input_device,
@@ -188,6 +220,44 @@ def command_configure(args: argparse.Namespace) -> None:
         fault_policy=args.fault_policy,
         route_change_policy=args.route_change_policy,
     )
+
+
+def require_inactive(config_path: Path) -> None:
+    runtime = runtime_status(config_path)
+    if runtime.get("status") in {"STARTING", "RUNNING", "STOPPING"}:
+        raise ValueError("stop or pause MicForYou before changing its configuration")
+
+
+def command_set_input(args: argparse.Namespace) -> None:
+    require_inactive(args.config)
+    config = load_config(args.config)
+    resolve_device(list_devices(), args.input_device, "input")
+    updated = replace(config, input_device=args.input_device)
+    save_config(updated, args.config)
+    write_json(
+        {
+            "saved": str(args.config),
+            "input_device": updated.input_device,
+            "requires_new_enrollment_baseline": True,
+            "status": product_status(updated),
+        },
+        None,
+    )
+
+
+def command_set_policy(args: argparse.Namespace) -> None:
+    require_inactive(args.config)
+    config = load_config(args.config)
+    updated = replace(config, fault_policy=args.fault_policy)
+    save_config(updated, args.config)
+    write_json(
+        {
+            "saved": str(args.config),
+            "fault_policy": updated.fault_policy,
+            "background_start_allowed": updated.fault_policy == "silence",
+        },
+        None,
+    )
     # Resolve both endpoints now so a typo never becomes a saved silent route.
     devices = list_devices()
     resolve_device(devices, config.input_device, "input")
@@ -202,7 +272,83 @@ def command_configure(args: argparse.Namespace) -> None:
 
 def command_status(args: argparse.Namespace) -> None:
     config = load_config(args.config)
-    write_json(product_status(config), args.output)
+    write_json(
+        {
+            **product_status(config),
+            "runtime": runtime_status(args.config),
+            "quality_notice": (
+                "Experimental Alpha: partial filtering only; target-absent "
+                "speech may still pass."
+            ),
+        },
+        args.output,
+    )
+
+
+def start_background(config: ProductConfig, args: argparse.Namespace) -> dict:
+    if config.fault_policy != "silence":
+        raise ValueError(
+            "background mode requires fault_policy=silence; use foreground "
+            "run for passthrough until a persistent degraded warning UI exists"
+        )
+    status = product_status(config)
+    if not status["ready"]:
+        raise ValueError(f"MicForYou is not ready: {status}")
+    stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    result = args.result or timestamped_result("product-background-run")
+    log_path = args.log or default_log_dir(args.config) / f"{stamp}-bridge.log"
+    health_path = log_path.with_suffix(".health.json")
+    command = build_bridge_command(config, args.duration, result, health_path)
+    state = start_managed_process(
+        command,
+        config_path=args.config,
+        state_path=default_state_path(args.config),
+        result_path=result,
+        log_path=log_path,
+        health_path=health_path,
+        cwd=config.project_root,
+        process_marker=str(config.project_root / "experiments" / "run_real_tse_bridge.py"),
+    )
+    return state.to_dict()
+
+
+def command_start(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    write_json(start_background(config, args), None)
+
+
+def command_pause(args: argparse.Namespace) -> None:
+    write_json(
+        stop_managed_process(
+            state_path=default_state_path(args.config),
+            final_status="PAUSED",
+            timeout_seconds=args.timeout,
+        ).to_dict(),
+        None,
+    )
+
+
+def command_resume(args: argparse.Namespace) -> None:
+    state_path = default_state_path(args.config)
+    state = load_state(state_path)
+    if state is None:
+        raise ValueError("MicForYou has not been paused; use start")
+    state = refresh_state(state, state_path)
+    if state.status != "PAUSED":
+        raise ValueError(f"MicForYou cannot resume from {state.status}; use start")
+    config = load_config(args.config)
+    write_json(start_background(config, args), None)
+
+
+def command_stop(args: argparse.Namespace) -> None:
+    write_json(
+        stop_managed_process(
+            state_path=default_state_path(args.config),
+            final_status="STOPPED",
+            timeout_seconds=args.timeout,
+        ).to_dict(),
+        None,
+    )
 
 
 def command_run(args: argparse.Namespace) -> None:
@@ -405,6 +551,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     configure.set_defaults(func=command_configure)
 
+    set_input = subparsers.add_parser(
+        "set-input", help="change only the physical microphone in saved configuration"
+    )
+    set_input.add_argument("input_device")
+    set_input.add_argument("--config", type=Path, default=default_config_path())
+    set_input.set_defaults(func=command_set_input)
+
+    set_policy = subparsers.add_parser(
+        "set-policy", help="change the saved fault policy while stopped"
+    )
+    set_policy.add_argument("fault_policy", choices=("silence", "passthrough"))
+    set_policy.add_argument("--config", type=Path, default=default_config_path())
+    set_policy.set_defaults(func=command_set_policy)
+
     status = subparsers.add_parser("status", help="check saved runtime readiness")
     status.add_argument("--config", type=Path, default=default_config_path())
     status.add_argument("--output", type=Path)
@@ -415,6 +575,36 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--duration", type=float, default=0)
     run.add_argument("--result", type=Path)
     run.set_defaults(func=command_run)
+
+    start = subparsers.add_parser(
+        "start", help="start the privacy-first TSE bridge in the background"
+    )
+    start.add_argument("--config", type=Path, default=default_config_path())
+    start.add_argument("--duration", type=float, default=0)
+    start.add_argument("--result", type=Path)
+    start.add_argument("--log", type=Path)
+    start.set_defaults(func=command_start)
+
+    pause = subparsers.add_parser(
+        "pause", help="stop capture safely and remember a paused state"
+    )
+    pause.add_argument("--config", type=Path, default=default_config_path())
+    pause.add_argument("--timeout", type=float, default=15.0)
+    pause.set_defaults(func=command_pause)
+
+    resume = subparsers.add_parser(
+        "resume", help="restart a paused bridge with fresh streaming state"
+    )
+    resume.add_argument("--config", type=Path, default=default_config_path())
+    resume.add_argument("--duration", type=float, default=0)
+    resume.add_argument("--result", type=Path)
+    resume.add_argument("--log", type=Path)
+    resume.set_defaults(func=command_resume)
+
+    stop = subparsers.add_parser("stop", help="stop the background bridge")
+    stop.add_argument("--config", type=Path, default=default_config_path())
+    stop.add_argument("--timeout", type=float, default=15.0)
+    stop.set_defaults(func=command_stop)
 
     enroll = subparsers.add_parser(
         "enroll", help="record and validate a replacement enrollment"

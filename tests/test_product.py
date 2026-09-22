@@ -10,6 +10,7 @@ from micforyou.product import (
     load_config,
     save_config,
 )
+from micforyou.cli import start_background
 
 
 def config(tmp_path: Path, **changes) -> ProductConfig:
@@ -61,3 +62,21 @@ def test_bridge_command_contains_explicit_safe_runtime_contract(tmp_path: Path) 
     assert command[command.index("--route-change-policy") + 1] == "continue_tse"
     assert command[command.index("--route-reconnect-timeout-seconds") + 1] == "120.0"
     assert command[command.index("--duration") + 1] == "0"
+
+
+def test_bridge_command_can_publish_controller_health(tmp_path: Path) -> None:
+    command = build_bridge_command(
+        config(tmp_path), 0, tmp_path / "result.json", tmp_path / "health.json"
+    )
+    assert command[command.index("--health-file") + 1] == str(tmp_path / "health.json")
+
+
+def test_background_start_requires_privacy_first_policy(tmp_path: Path) -> None:
+    class Args:
+        config = tmp_path / "config.json"
+        duration = 0
+        result = None
+        log = None
+
+    with pytest.raises(ValueError, match="fault_policy=silence"):
+        start_background(config(tmp_path, fault_policy="passthrough"), Args())

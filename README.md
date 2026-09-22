@@ -49,6 +49,8 @@ An independent [target-presence auxiliary-gate PoC](docs/TARGET_PRESENCE_GATE_PO
 
 Before enabling the live bridge on any machine, run the pre-launch benchmark and paced latency check described in [the performance guide](docs/PERFORMANCE_GUIDE.md); the live bridge has no default `--frames-per-chunk` by design.
 
+The Stage-D product controller now supports privacy-first background `start`, lifecycle-aware `status`, safe `pause`/`resume`, `stop`, microphone-only `set-input`, and stopped-only `set-policy`. Background mode deliberately refuses raw-passthrough policy until a persistent degraded-warning UI exists; see [daily operation](docs/STAGE_D.md).
+
 Mac B's returned thread sweep and ONNX CPU results are recorded in [the 2026-09-18 runtime report](docs/MAC_B_RUNTIME_RESULTS_20260918.md). INT8 correctness failed. The corrected CoreML auto/four-thread matrix also failed with best RTF 1.052, so `CURRENT REAL-TSE ON M1: STOP`; see [the final thread recheck](docs/MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md). The next-model source gate and screened candidates are recorded in [the lightweight TSE screening](docs/LIGHTWEIGHT_TSE_SCREENING_20260918.md).
 
 After BlackHole has been restored on Mac A, use [the Mac A live-acceptance handoff](docs/MAC_A_LIVE_ACCEPTANCE_HANDOFF.md) for the physical bridge, stability, and manual-experience checks. The one-shot user procedure (enrollment, 120 s dictation, 30-minute Doubao check, restore) is [MAC_A_LIVE_SESSION.md](docs/MAC_A_LIVE_SESSION.md).

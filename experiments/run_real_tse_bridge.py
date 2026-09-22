@@ -236,7 +236,32 @@ def main() -> None:
         help="maximum silent wait for the selected input to reappear",
     )
     parser.add_argument("--result", type=Path, required=True)
+    parser.add_argument(
+        "--health-file",
+        type=Path,
+        help="optional atomic lifecycle status for the product controller",
+    )
     args = parser.parse_args()
+
+    def write_health(status: str, detail: str, **values) -> None:
+        if args.health_file is None:
+            return
+        payload = {
+            "schema": "micforyou/bridge-health/1",
+            "status": status,
+            "detail": detail,
+            "updated_at_epoch": time.time(),
+            **values,
+        }
+        args.health_file.parent.mkdir(parents=True, exist_ok=True)
+        temporary = args.health_file.with_suffix(args.health_file.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(args.health_file)
+
+    write_health("STARTING", "validating devices and loading the TSE runtime")
 
     if args.torch_threads is not None and args.torch_threads < 1:
         raise SystemExit("--torch-threads must be >= 1")
@@ -430,6 +455,14 @@ def main() -> None:
                 callback=callback,
             ) as stream:
                 stream_latency = stream.latency
+                write_health(
+                    "RUNNING",
+                    "privacy-first TSE route is open",
+                    input_device=active_input_device.name,
+                    output_device=active_output_device.name,
+                    final_mode="tse",
+                    degraded=False,
+                )
                 while not engine.fault.is_set():
                     if deadline is not None and time.monotonic() >= deadline:
                         break
@@ -470,6 +503,12 @@ def main() -> None:
                             "input device interrupted; silencing until "
                             "the explicit route can be reopened"
                         )
+                        write_health(
+                            "RECOVERING",
+                            "input route interrupted; output is silent",
+                            final_mode="tse",
+                            degraded=True,
+                        )
                     if now >= next_fresh_route_check and not route_lost:
                         next_fresh_route_check = now + 1.0
                         try:
@@ -507,6 +546,12 @@ def main() -> None:
                                     engine.latch_fault(
                                         "selected input route disappeared; silencing until "
                                         "the explicit route can be reopened"
+                                    )
+                                    write_health(
+                                        "RECOVERING",
+                                        "selected input disappeared; output is silent",
+                                        final_mode="tse",
+                                        degraded=True,
                                     )
                 capture_enabled.clear()
                 engine.finish(timeout=10)
@@ -629,6 +674,12 @@ def main() -> None:
             "WARNING: TSE filtering is unavailable; continuity-first mode is "
             "passing UNFILTERED microphone audio to BlackHole.",
             flush=True,
+        )
+        write_health(
+            "DEGRADED",
+            "UNFILTERED microphone passthrough is active",
+            final_mode="passthrough",
+            degraded=True,
         )
         next_passthrough_warning = passthrough_started + 30
         passthrough_liveness = CallbackLivenessMonitor(
@@ -777,6 +828,13 @@ def main() -> None:
     }
     args.result.parent.mkdir(parents=True, exist_ok=True)
     args.result.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
+    write_health(
+        "FAULT" if final_status == "FAULT" else "STOPPED",
+        "bridge finished",
+        final_mode=final_mode,
+        degraded=result["degraded"],
+        result=str(args.result),
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if final_status == "FAULT":
         raise SystemExit(2)
