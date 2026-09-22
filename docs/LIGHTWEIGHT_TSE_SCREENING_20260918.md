@@ -9,6 +9,24 @@ gate. Do not send Mac B another runtime task until a new pinned candidate passes
 the source, correctness, Mac A runtime and private-recording quality gates. This
 is not a Mac B hardware block.
 
+### 2026-09-22 rescreen after personalized fine-tuning rejection
+
+The bounded personalized fine-tuning branch did not produce an upgrade, so the
+public model supply was checked again. The search cache once again exposes the
+`penta2himajin/tse-conv-tasnet-48k` v3 model card, but an unauthenticated request
+to the Hugging Face model API still returns HTTP 401. The graph, external data,
+revision and hashes therefore remain unavailable and the source gate is still
+failed. This is not treated as a recovered artifact.
+
+The official REAL-TSE Challenge repository still publishes the same four BSRNN
+baselines already covered by this project. Other newly indexed results found in
+this pass are target-speaker detectors, ASR-internal feature models, or
+audio-visual systems; they do not satisfy the required enrollment-conditioned
+waveform-output contract. There is consequently no new candidate to download or
+run on private audio. Current Experimental Alpha remains unchanged, and model
+integration is paused at the external source gate rather than hidden behind more
+tuning of the rejected recipe.
+
 ### 2026-09-19 follow-up: source found, candidate stopped at quality gate
 
 The search was resumed instead of treating the missing `tse-conv-tasnet-48k`
