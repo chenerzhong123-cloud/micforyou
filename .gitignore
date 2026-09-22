@@ -14,3 +14,5 @@ runs/
 *.flac
 *.m4a
 tools/capture_kit/.capture-venv/
+app/**/.build/
+app/**/.swiftpm/
