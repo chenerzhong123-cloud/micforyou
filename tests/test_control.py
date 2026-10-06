@@ -109,3 +109,16 @@ def test_refuses_to_signal_unowned_process(tmp_path: Path) -> None:
         stop_managed_process(
             state_path=path, final_status="STOPPED", timeout_seconds=0.1
         )
+
+
+def test_paused_bridge_can_be_ended_without_a_process(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    save_state(state(tmp_path, status="PAUSED", pid=None, process_marker=None), path)
+
+    stopped = stop_managed_process(
+        state_path=path, final_status="STOPPED", timeout_seconds=0.1
+    )
+
+    assert stopped.status == "STOPPED"
+    assert stopped.pid is None
+    assert stopped.detail == "microphone released; bridge stopped"

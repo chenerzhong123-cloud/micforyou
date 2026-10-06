@@ -229,6 +229,17 @@ def stop_managed_process(
     if state is None:
         raise ValueError("MicForYou has no runtime state")
     state = refresh_state(state, state_path)
+    if state.status == "PAUSED" and final_status == "STOPPED":
+        stopped = RuntimeState(
+            **{
+                **asdict(state),
+                "status": "STOPPED",
+                "updated_at": now_iso(),
+                "detail": "microphone released; bridge stopped",
+            }
+        )
+        save_state(stopped, state_path)
+        return stopped
     if state.status not in ACTIVE_STATES:
         if state.status == final_status:
             return state

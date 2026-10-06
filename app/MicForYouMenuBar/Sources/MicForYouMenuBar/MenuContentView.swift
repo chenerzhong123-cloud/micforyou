@@ -12,35 +12,31 @@ struct MenuContentView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             header
-            Divider()
-            qualityNotice
-            configuration
-            controls
-            Button("重新注册声音…") { model.confirmEnrollment = true }
-                .disabled(model.busy || model.status?.ready != true || model.status?.runtime.isActive == true)
-                .alert("重新注册声音", isPresented: $model.confirmEnrollment) {
-                    Button("取消", role: .cancel) {}
-                    Button("开始 45 秒录音") {
-                        Task { await model.perform("enroll") }
-                    }
-                } message: {
-                    Text("请使用当前日常麦克风，在安静环境自然朗读。通过 ONNX 正确性检查后才会替换现有注册；失败不会覆盖旧版本。")
-                }
+            routeSummary
+            primaryControls
+
+            if let message = importantMessage {
+                Label(message.text, systemImage: message.icon)
+                    .font(.caption)
+                    .foregroundStyle(message.color)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if let error = model.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
             Divider()
             footer
         }
-        .padding(14)
-        .frame(width: 360)
+        .padding(16)
+        .frame(width: 328)
         .task {
-            await model.refreshDevices()
             while !Task.isCancelled {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(2))
@@ -49,100 +45,193 @@ struct MenuContentView: View {
     }
 
     private var header: some View {
-        HStack {
-            Image(systemName: iconName)
-                .foregroundStyle(statusColor)
+        HStack(spacing: 11) {
+            ZStack {
+                Circle()
+                    .fill(statusColor.opacity(0.12))
+                    .frame(width: 38, height: 38)
+                Image(systemName: iconName)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(statusColor)
+            }
+
             VStack(alignment: .leading, spacing: 2) {
-                Text("MicForYou").font(.headline)
-                Text(statusLabel).font(.caption).foregroundStyle(.secondary)
+                Text(statusLabel)
+                    .font(.headline)
+                Text(statusDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
+
             Spacer()
-            if model.busy { ProgressView().controlSize(.small) }
-        }
-    }
-
-    private var qualityNotice: some View {
-        Label(
-            "实验版：可减少部分他人声，但目标缺席时仍可能放行，不能视为隐私隔离。",
-            systemImage: "person.crop.circle.badge.exclamationmark"
-        )
-        .font(.caption)
-        .foregroundStyle(.orange)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var configuration: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("实体麦克风").font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Picker("实体麦克风", selection: $model.selectedInput) {
-                    if model.devices.isEmpty {
-                        Text(model.selectedInput.isEmpty ? "未找到设备" : model.selectedInput)
-                            .tag(model.selectedInput)
-                    }
-                    ForEach(model.devices) { device in
-                        Text(device.name).tag(device.name)
-                    }
-                }
-                .labelsHidden()
-                .disabled(model.status?.runtime.isActive == true || model.busy)
-                Button("应用") { Task { await model.changeInput() } }
-                    .disabled(
-                        model.busy || model.selectedInput.isEmpty ||
-                        model.selectedInput == model.status?.inputDevice ||
-                        model.status?.runtime.isActive == true
-                    )
-            }
-            Text("豆包输入必须选择 BlackHole 2ch；软件不会修改系统默认输入。")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var controls: some View {
-        HStack {
-            if model.status?.runtime.status == "PAUSED" {
-                Button("继续") { Task { await model.perform("resume") } }
-                    .buttonStyle(.borderedProminent)
-            } else if model.status?.runtime.isActive == true {
-                Button("暂停") { Task { await model.perform("pause") } }
-                    .buttonStyle(.bordered)
-                Button("停止") { Task { await model.perform("stop") } }
-                    .buttonStyle(.bordered)
+            if model.busy {
+                ProgressView().controlSize(.small)
             } else {
-                Button("开始过滤") { Task { await model.perform("start") } }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.status?.ready != true)
+                Text("Alpha")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.quaternary, in: Capsule())
             }
-            Spacer()
-            Button("刷新") { Task { await model.refresh() } }
         }
-        .disabled(model.busy)
+    }
+
+    private var routeSummary: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "mic")
+            Text(model.status?.inputDevice ?? "正在读取麦克风")
+                .lineLimit(1)
+            Image(systemName: "chevron.right")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Text("BlackHole 2ch")
+                .lineLimit(1)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private var primaryControls: some View {
+        if runtimeStatus == "PAUSED" {
+            HStack {
+                actionButton("继续过滤", systemImage: "play.fill", command: "resume", prominent: true)
+                actionButton("结束", systemImage: "stop.fill", command: "stop")
+            }
+        } else if ["RUNNING", "DEGRADED"].contains(runtimeStatus) {
+            HStack {
+                actionButton("暂停", systemImage: "pause.fill", command: "pause", prominent: true)
+                actionButton("结束", systemImage: "stop.fill", command: "stop")
+            }
+        } else if ["STARTING", "RECOVERING", "STOPPING"].contains(runtimeStatus) {
+            HStack {
+                Button {
+                } label: {
+                    Label(statusLabel, systemImage: "hourglass")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(true)
+                actionButton("结束", systemImage: "stop.fill", command: "stop")
+            }
+        } else if model.status?.ready == true {
+            actionButton(
+                runtimeStatus == "FAULT" ? "重新尝试" : "开始过滤",
+                systemImage: runtimeStatus == "FAULT" ? "arrow.clockwise" : "waveform.badge.mic",
+                command: "start",
+                prominent: true
+            )
+        } else {
+            SettingsLink {
+                Label("打开设置", systemImage: "gearshape")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+    }
+
+    @ViewBuilder
+    private func actionButton(
+        _ title: String,
+        systemImage: String,
+        command: String,
+        prominent: Bool = false
+    ) -> some View {
+        if prominent {
+            Button {
+                Task { await model.perform(command) }
+            } label: {
+                Label(title, systemImage: systemImage)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(model.busy)
+        } else {
+            Button {
+                Task { await model.perform(command) }
+            } label: {
+                Label(title, systemImage: systemImage)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .disabled(model.busy)
+        }
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 12) {
+            SettingsLink {
+                Label("设置", systemImage: "gearshape")
+            }
+            .keyboardShortcut(",")
+
             if model.status?.runtime.logPath != nil {
-                Button("查看日志") { model.openLog() }
+                Button("日志") { model.openLog() }
             }
+
             Spacer()
-            Button(model.status?.runtime.isActive == true ? "退出界面（过滤继续）" : "退出界面") {
-                NSApplication.shared.terminate(nil)
-            }
+            Button("退出界面") { NSApplication.shared.terminate(nil) }
+                .help(model.status?.runtime.isActive == true ? "过滤会继续在后台运行" : "退出 MicForYou 界面")
         }
         .font(.caption)
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+    }
+
+    private var importantMessage: (text: String, icon: String, color: Color)? {
+        switch runtimeStatus {
+        case "RUNNING":
+            return ("豆包输入保持为 BlackHole 2ch", "checkmark.circle", .secondary)
+        case "RECOVERING":
+            return ("正在重建音频链路；恢复前不会输出声音", "shield.lefthalf.filled", .orange)
+        case "DEGRADED":
+            return ("警告：当前输出未经过滤的原始声音", "exclamationmark.shield.fill", .red)
+        case "FAULT":
+            return ("已安全静音。可检查设备后重新尝试", "speaker.slash.fill", .red)
+        case "PAUSED":
+            return ("实体麦克风已释放；继续时会重建过滤状态", "pause.circle", .secondary)
+        default:
+            if let error = model.status?.deviceErrors.first {
+                return (error, "mic.slash", .orange)
+            }
+            return nil
+        }
     }
 
     private var statusLabel: String {
         switch runtimeStatus {
         case "RUNNING": "正在过滤"
-        case "STARTING": "正在加载模型"
-        case "RECOVERING": "正在恢复，当前静音"
-        case "DEGRADED": "未过滤原音透传"
-        case "PAUSED": "已暂停，麦克风已释放"
-        case "FAULT": "故障，输出保持静音"
-        case "STOPPED": model.status?.ready == true ? "已就绪" : "尚未就绪"
+        case "STARTING": "正在加载"
+        case "RECOVERING": "正在恢复"
+        case "STOPPING": "正在结束"
+        case "DEGRADED": "原音透传"
+        case "PAUSED": "已暂停"
+        case "FAULT": "已安全静音"
+        case "STOPPED": model.status?.ready == true ? "可以开始" : "需要完成设置"
         default: "正在读取状态"
+        }
+    }
+
+    private var statusDetail: String {
+        switch runtimeStatus {
+        case "RUNNING": "仅处理声音，不转写文字"
+        case "STARTING": "首次加载可能需要一点时间"
+        case "RECOVERING": "异常片段已跳过"
+        case "STOPPING": "正在释放麦克风"
+        case "DEGRADED": "连续优先模式"
+        case "PAUSED": "BlackHole 当前无输出"
+        case "FAULT": "隐私优先模式"
+        case "STOPPED": model.status?.ready == true ? "隐私优先 · 故障时静音" : "检查实体麦克风"
+        default: "MicForYou"
         }
     }
 
@@ -151,7 +240,7 @@ struct MenuContentView: View {
         case .good: "waveform.badge.mic"
         case .warning: "arrow.triangle.2.circlepath"
         case .danger: "exclamationmark.shield.fill"
-        case .neutral: "mic.slash"
+        case .neutral: runtimeStatus == "PAUSED" ? "pause.fill" : "mic.slash"
         }
     }
 
