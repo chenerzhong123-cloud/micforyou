@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+  <title>MicForYou — Complete Installer</title>
+  <welcome file="welcome.html"/>
+  <readme file="readme.html"/>
+  <license file="license.txt"/>
+  <conclusion file="conclusion.html"/>
+  <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+  <options customize="never" require-scripts="true" hostArchitectures="arm64" rootVolumeOnly="true"/>
+  <volume-check><allowed-os-versions><os-version min="14.0"/></allowed-os-versions></volume-check>
+  <script><![CDATA[
+    function needsDriver() {
+      var root = '/Library/Audio/Plug-Ins/HAL/BlackHole2ch.driver/Contents/';
+      var info = system.files.plistAtPath(root + 'Info.plist');
+      if (!info || info.CFBundleIdentifier != 'audio.existential.BlackHole2ch' || !system.files.fileExistsAtPath(root + 'MacOS/BlackHole')) return true;
+      var version = info.CFBundleShortVersionString;
+      return !version || system.compareVersions(version, '0.7.1') < 0;
+    }
+  ]]></script>
+  <choices-outline><line choice="app"/><line choice="driver"/></choices-outline>
+  <choice id="app" visible="true" title="MicForYou (App + model + runtime)" enabled="false" selected="true">
+    <pkg-ref id="com.micforyou.complete"/>
+  </choice>
+  <choice id="driver" visible="true" title="BlackHole 2ch 0.7.1" enabled="false" selected="needsDriver()">
+    <pkg-ref id="audio.existential.BlackHole2ch"/>
+  </choice>
+  <pkg-ref id="com.micforyou.complete" version="@VERSION@" onConclusion="None">#MicForYou.pkg</pkg-ref>
+  <pkg-ref id="audio.existential.BlackHole2ch" version="0.7.1" onConclusion="RequireRestart">#BlackHole.pkg</pkg-ref>
+</installer-gui-script>

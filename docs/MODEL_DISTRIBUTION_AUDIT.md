@@ -21,7 +21,7 @@
 | 同模型 Hugging Face 页面 | [官方 ECAPA512 页面](https://huggingface.co/Wespeaker/wespeaker-voxceleb-ecapa-tdnn512) 另标 Apache-2.0 | 记录声明差异；不借此移除明确覆盖预训练参数的 CC BY 署名 |
 | WeSpeaker 源码 | [固定版本 LICENSE](https://github.com/wenet-e2e/wespeaker/blob/8f53b6485d9f88a207bd17e7f8dba899495ec794/LICENSE) 为 Apache-2.0 | 只内置所需 ECAPA / pooling 模块，保留版权头和改动标记 |
 | Python 和 wheel / 原生运行库 | 各组件自己的 LICENSE / NOTICE | 运行包保留其声明；已识别 LGPL／MPL 源码随包提供；bundle-manifest.json 记录实际版本、源码 hash 和许可文件；公开发布前需复核全部实际原生依赖 |
-| BlackHole | [GPL-3.0 / 另行集成授权说明](https://github.com/ExistentialAudio/BlackHole#can-i-integrate-blackhole-into-my-app) | 不打包驱动；引导用户从官方独立安装 |
+| BlackHole 2ch 0.7.1 | 用户于 2026-10-09 确认已获集成授权；[官方版本 LICENSE](https://github.com/ExistentialAudio/BlackHole/blob/v0.7.1/LICENSE) 区分 GPL 源码与保留权利的官方二进制 | 按另行授权内置官方组件，保持二进制、脚本和声明，见 [BlackHole 声明](../licenses/BLACKHOLE_NOTICES.md)；未声称独立审阅私人合同 |
 
 CC BY 4.0 允许按其条款分享和改编，包括商业用途；署名、改动标记和不施加额外限制的要求见 [官方条款](https://creativecommons.org/licenses/by/4.0/legalcode.en)。此处依据的是 WeSpeaker 对其预训练模型的公开许可，不能只用数据集许可自行推导模型许可。许可不授予作者无权授予的其他权利。
 

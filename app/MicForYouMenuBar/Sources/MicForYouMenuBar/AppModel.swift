@@ -94,6 +94,13 @@ final class AppModel: ObservableObject {
     }
 
     func openDriverGuide() {
+        if let root = Bundle.main.resourceURL {
+            let installer = root.appending(path: "Installers/BlackHole2ch-0.7.1.pkg")
+            if FileManager.default.fileExists(atPath: installer.path) {
+                NSWorkspace.shared.open(installer)
+                return
+            }
+        }
         NSWorkspace.shared.open(URL(string: "https://existential.audio/blackhole/")!)
     }
 

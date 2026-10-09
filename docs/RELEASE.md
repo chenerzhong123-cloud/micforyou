@@ -1,6 +1,6 @@
 # GitHub 发布准备
 
-当前已构建 0.2.0 本地完整 Alpha，内置 Python、推理依赖和通用模型；首次使用由 App 引导声音注册。当前仓库仍为 private，尚无已发布完整 Release。完整包作为 `v0.2.0-local-alpha` Draft Release 提供维护者验收，未完成下列发布条件。提交与推送源码、文档不会改变仓库可见性或自动公开安装包。
+当前已构建 0.2.1 一体安装 Alpha，内置 App、Python、推理依赖、通用模型和经集成授权的官方 BlackHole 2ch；首次使用由 App 引导声音注册。当前仓库仍为 private，尚无已发布完整 Release。完整包作为 `v0.2.1-local-alpha` Draft Release 提供维护者验收，未完成下列发布条件。提交与推送源码、文档不会改变仓库可见性或自动公开安装包。
 
 ## 本地交付
 
@@ -23,6 +23,15 @@ PYTHON_ROOT/bin/python3.12 -B tools/bundle/prepare_native.py \
 
 固定源码版本与原始 checkpoint hash 会在构建时检查。完整包内置通用模型、离线推理源码、Python、许可与版本清单；不包含个人声音和个性化模型。普通 venv 不能作为 PYTHON_ROOT。安装依赖时仅对专用构建 Python 使用 `uv pip install --break-system-packages --python ... -r requirements-bundle.lock`，不得修改系统 Python。
 
+一体安装包使用上述完整运行环境，再提供固定版本的官方驱动包：
+
+```bash
+curl -fL https://existential.audio/downloads/BlackHole2ch-0.7.1.pkg -o BlackHole2ch-0.7.1.pkg
+./app/MicForYouMenuBar/package_installer.sh PYTHON_ROOT REAL_TSE_REPO WESPEAKER_PACKAGE BlackHole2ch-0.7.1.pkg OUTPUT_ROOT
+```
+
+构建器检查官方包 SHA-256 与签名身份，保留原始组件 Payload/Bom/脚本，并将完整 App 和驱动组成 `.pkg`；另附 checksum、manifest 和双语说明。输出目录须全新。App 安装位置固定 `/Applications`，正在运行的 App／音频／注册任务会使预检查停止。驱动同版或更新版跳过，缺失或旧版安装后按官方要求重启。安装脚本不修改输入设备、不启动录音、不删除用户数据。组合包目前无签名／公证，原始驱动的公证不覆盖它。
+
 当前包仅供本地 Alpha 验收，公共发布条件见下文。用户指南：[中文](BUNDLED_APP.md) / [English](BUNDLED_APP.en.md)。
 
 最新宣传片和预览图已加入 `docs/media/`，中英文 README 使用仓库内相对链接；随源码推送后即可由有仓库访问权限的用户下载。它们不依赖开发机 localhost。
@@ -35,7 +44,7 @@ PYTHON_ROOT/bin/python3.12 -B tools/bundle/prepare_native.py \
 2. 确认目标受众：private 仓库仅向已有访问权限的人分发；面向所有用户时，由仓库所有者决定可见性或单独分发仓库，并调整双语 README 的下载状态。
 3. 明确本项目代码与品牌资源的分发许可；当前仓库没有项目 LICENSE。通用模型随完整 App 内置，各部分来源与许可分别保留。已识别 LGPL／MPL 组件源码随包交付，全部实际原生库仍需最终分发复核。
 4. 面向普通用户分发前，推荐配置 Developer ID 签名与 Apple 公证，以减少首次打开阻拦。当前极客测试包仍明确说明 ad-hoc 状态。
-5. 提交经审查的源码、双语说明和视频，创建 Experimental Alpha prerelease，上传本机构建 ZIP、checksum、宣传片；只声明已验证的架构。README 的 Release 链接使用发布后的真实资产。
+5. 提交经审查的源码、双语说明和视频，创建 Experimental Alpha prerelease，上传完整 `.pkg`、checksum、manifest 和双语说明、宣传片；只声明已验证的架构。README 的 Release 链接使用发布后的真实资产。
 
 ## 0.1.1 更新说明草稿
 

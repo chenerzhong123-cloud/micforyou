@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import platform
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,8 @@ PROJECT = Path(__file__).resolve().parents[2]
 SOURCE_COMMIT = "2a540977a348fbaa92e623210505430e2cec608d"
 WEIGHTS_HASH = "97c01b79b0cf1a5b914a4a3bc1113c1864752ebdd320f528e77a53202447fef2"
 WESPEAKER_COMMIT = "8f53b6485d9f88a207bd17e7f8dba899495ec794"
+BLACKHOLE_HASH = "57b540f27a3e29c37e310e01bee0fdfab76733087e47f997ef9dccf851400dcf"
+BLACKHOLE_VERSION = "0.7.1"
 SCRIPTS = ["run_real_tse_bridge.py", "probe_real_tse_stateful.py",
            "export_real_tse_onnx.py", "compare_torch_onnx.py",
            "benchmark_onnx_tse.py", "measure_bridge_latency.py"]
@@ -36,12 +39,21 @@ def main():
     parser.add_argument("--wespeaker", type=Path, required=True,
                         help="WeSpeaker package directory at the pinned source revision")
     parser.add_argument("--app", type=Path, required=True)
+    parser.add_argument("--blackhole-pkg", type=Path,
+                        help="Authorized official BlackHole 2ch 0.7.1 installer for offline repair")
     parser.add_argument("--native-assets", type=Path,
                         default=PROJECT / "outputs/bundle-build/native",
                         help="Output of prepare_native.py")
     args = parser.parse_args()
     if sys.platform != "darwin" or platform.machine() != "arm64":
         raise SystemExit("Build on macOS arm64")
+    if args.blackhole_pkg:
+        if sha256(args.blackhole_pkg) != BLACKHOLE_HASH:
+            raise SystemExit("Unexpected BlackHole installer hash")
+        signature = subprocess.check_output(
+            ["pkgutil", "--check-signature", str(args.blackhole_pkg)], text=True)
+        if "Existential Audio Inc. (Q5C99V536K)" not in signature:
+            raise SystemExit("Unexpected BlackHole installer signer")
     revision = subprocess.check_output(["git", "-C", str(args.model_repo),
                                        "rev-parse", "HEAD"], text=True).strip()
     if revision != SOURCE_COMMIT:
@@ -105,6 +117,11 @@ def main():
         shutil.copy2(model / name, root / "models/tfmap_context_causal_100" / name)
     copy_code(PROJECT / "licenses", root / "licenses")
     copy_code(args.native_assets / "licenses", root / "licenses/native")
+    if args.blackhole_pkg:
+        installers = args.app / "Contents/Resources/Installers"
+        installers.mkdir()
+        shutil.copy2(args.blackhole_pkg, installers / f"BlackHole2ch-{BLACKHOLE_VERSION}.pkg")
+    version = plistlib.loads((args.app / "Contents/Info.plist").read_bytes())["CFBundleShortVersionString"]
     python = root / "python/bin/python3.12"
     metadata_code = """import importlib.metadata as m,json
 print(json.dumps([{'name':d.metadata['Name'],'version':d.version,
@@ -113,11 +130,15 @@ print(json.dumps([{'name':d.metadata['Name'],'version':d.version,
  'license_files':[str(f) for f in d.files or [] if 'license' in str(f).lower() or 'notice' in str(f).lower()]}
  for d in m.distributions()],indent=2))"""
     manifest = {
-        "schema": "micforyou/bundle/1", "version": "0.2.0", "architecture": "arm64",
+        "schema": "micforyou/bundle/1", "version": version, "architecture": "arm64",
         "real_tse_commit": SOURCE_COMMIT, "wespeaker_commit": WESPEAKER_COMMIT,
         "model_sha256": WEIGHTS_HASH,
         "model_licenses": ["Apache-2.0 (Ke Zhang's portions)", "CC-BY-4.0 (WeSpeaker ECAPA parameters)"],
-        "personal_data_included": False, "driver_included": False,
+        "personal_data_included": False, "driver_included": bool(args.blackhole_pkg),
+        "blackhole": {"version": BLACKHOLE_VERSION, "installer_sha256": BLACKHOLE_HASH,
+                      "role": "official offline repair installer; system driver installed by product pkg",
+                      "license_basis": "separate integration authorization confirmed by project owner 2026-10-09"}
+                     if args.blackhole_pkg else None,
         "native_assets": native_metadata,
         "public_release_ready": False,
         "remaining_release_checks": ["Developer ID/notarization", "native dependency source compliance",

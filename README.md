@@ -8,7 +8,7 @@
 
 在开放工位里口述方案，身旁的交谈不必都挤进你的句子。MicForYou 以你的注册声音为参考，在 Mac 本机处理麦克风音频，减少部分附近人声和环境干扰，再交给你熟悉的豆包输入法识别文字。
 
-当前是 **Experimental Alpha**，通过 GitHub 分发，暂无 App Store 版本。0.2.0 本地完整包内置运行环境与通用模型；首次使用仍需安装音频路由组件、授权麦克风并注册自己的声音。
+当前是 **Experimental Alpha**，通过 GitHub 分发，暂无 App Store 版本。0.2.1 一体安装包内置 App、运行环境、通用模型和音频驱动；首次使用需系统安装授权、麦克风授权并注册自己的声音。
 
 ## 看看它如何工作
 
@@ -34,9 +34,9 @@
 
 ## 下载与安装
 
-**0.2.0 本地完整 Alpha 已构建**，内置 arm64 Python、推理依赖和通用 REAL-TSE 权重，用户无需安装 Python、uv、Git 或手动下载模型。当前尚未公开发布：新设备首次设置、真实麦克风／输入法验收、原生依赖最终分发复核及 Developer ID／公证仍待完成。已识别的 LGPL／MPL 源码和声明随包附带。旧 0.1.1 ZIP 仍然只是菜单栏控制器。
+**0.2.1 一体安装包已构建**，包含完整 App、arm64 Python、推理依赖、通用 REAL-TSE 权重及经集成授权的官方 BlackHole 2ch。无需安装开发工具或单独下载模型、驱动。当前仍为 private 仓库中的 Draft 验收包；真实新设备验收、原生依赖最终复核及 Developer ID／公证尚待完成。
 
-请阅读 [完整 App 安装指南](docs/BUNDLED_APP.md)。完整版本对外发布后，从 [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases) 的 Assets 下载 `.app.zip` 和 checksum，解压并放入 Applications。从官方安装 BlackHole 2ch 后，在设置中选择麦克风、注册自己的声音；App 会自动导出、校验和检查性能，通过后才允许过滤。最后将豆包输入设备选为 `BlackHole 2ch`。
+请阅读 [完整安装指南](docs/BUNDLED_APP.md)。有权限的维护者从 [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases) 的 `v0.2.1-local-alpha` Draft Assets 下载 `.pkg` 和 `.sha256`，核对后双击安装；公开发布后用户使用同样流程。安装前结束音频并退出旧版，App 安装到 `/Applications`，首次安装驱动后按提示重启。打开 App 注册声音；模型导出、校验与性能检查通过后，将豆包输入设备选为 `BlackHole 2ch`。安装器不删除个人数据。
 
 目前仓库仍为私有，访问需要权限，暂无公开完整 Release 资产。GitHub 的 `Source code (zip)` 是源码，不是 App 安装包。开发者仍可使用 [源码安装指南](docs/INSTALL.md)。
 
@@ -100,6 +100,6 @@ uv sync --extra dev
 - “需要完成设置”：在“设置”中检查驱动、麦克风和声音注册进度；源码用户也可运行 `uv run micforyou status`。
 - “没有文字”：确认状态已就绪，豆包选中 `BlackHole 2ch`，并检查 macOS 对实际录音进程的麦克风授权。
 - “麦克风还在使用”：暂停和退出界面都会保留音频，请先“结束”；也可运行 `uv run micforyou stop`。
-- 卸载：先结束、退出，把 `~/Applications/MicForYou.app` 移入废纸篓，恢复豆包输入设备。配置、声音注册和 BlackHole 是单独的资源，按需备份和移除。
+- 卸载：先结束、退出，把 `/Applications/MicForYou.app`（以及旧 ZIP 留在 `~/Applications` 的副本）移入废纸篓，恢复豆包输入设备。配置、声音注册和 BlackHole 是单独的资源，按需备份和移除。
 
 [完整包安装](docs/BUNDLED_APP.md) · [源码安装](docs/INSTALL.md) · [菜单栏操作](docs/MENU_BAR_APP.md) · [性能检查](docs/PERFORMANCE_GUIDE.md) · [研发记录](docs/DEVELOPMENT_HISTORY.md) · [视频源码](video/README.md)

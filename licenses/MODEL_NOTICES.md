@@ -65,4 +65,6 @@ Identified LGPL/MPL source archives, CPython native notices, and replacement
 instructions are included; see NATIVE_NOTICES.md. A final review of all actual
 native binaries remains pending before public distribution. It is not marked
 release-ready.
-BlackHole is not bundled. Users install it from its official distributor.
+The complete product installer includes the authorized official BlackHole 2ch component.
+The original package is also bundled for offline repair. See BLACKHOLE_NOTICES.md;
+BlackHole source and official binary terms are separate.

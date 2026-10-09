@@ -52,9 +52,9 @@ struct SettingsView: View {
                     }
                     if model.isBundled && !model.driverInstalled {
                         HStack {
-                            Text("请从官方安装 BlackHole 2ch，重启后刷新设备。")
+                            Text("请安装随 App 附带的音频组件，重启后刷新设备。")
                                 .font(.caption)
-                            Button("安装指引") { model.openDriverGuide() }
+                            Button("安装音频组件…") { model.openDriverGuide() }
                             Button("刷新") { Task { await model.refreshDevices() } }
                         }
                     } else {

@@ -8,7 +8,7 @@ English · [简体中文](README.md)
 
 Dictate a proposal at an open desk without giving every nearby conversation a place in your sentence. MicForYou uses your enrolled voice as a reference to process microphone audio locally on your Mac, reducing some nearby speech and environmental interference before sending it to Doubao IME for transcription.
 
-This **Experimental Alpha** is distributed through GitHub; there is no App Store version. The local complete 0.2.0 bundle includes the runtime and general model. First use still requires the audio route, microphone permission and personal voice registration.
+This **Experimental Alpha** is distributed through GitHub; there is no App Store version. The complete 0.2.1 installer includes the app, runtime, general model and audio driver. First use requires system installation authorization, microphone permission and personal voice registration.
 
 ## Watch the demo
 
@@ -34,9 +34,9 @@ The complete app automatically checks local performance during voice registratio
 
 ## Download and installation
 
-**A local complete 0.2.0 alpha has been built**, including arm64 Python, inference dependencies and the general REAL-TSE model. Users do not need to install Python, uv or Git, or manually download weights. It has not been publicly released: clean-device first-use testing, physical microphone/IME acceptance, final native distribution review and Developer ID/notarization remain pending. Identified LGPL/MPL sources and notices are supplied in the bundle. The old 0.1.1 ZIP is a controller-only package.
+**The complete 0.2.1 installer has been built**, including the app, arm64 Python, inference dependencies, general REAL-TSE checkpoint and authorized official BlackHole 2ch. No developer tools or separate model/driver downloads are needed. It remains a Draft acceptance build in a private repository. Clean-device testing, final native distribution review and Developer ID/notarization are pending.
 
-Read the [complete-app installation guide](docs/BUNDLED_APP.en.md). Once a complete release is available, download its `.app.zip` and checksum from [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases) Assets, unpack and move it into Applications. Install BlackHole 2ch from its official distributor, then use Settings to select a microphone and register your voice. The app automatically exports, validates and benchmarks the model; setup must pass before filtering. Finally select `BlackHole 2ch` as Doubao's input device.
+Read the [installation guide](docs/BUNDLED_APP.en.md). Maintainers with access can download the `.pkg` and `.sha256` from `v0.2.1-local-alpha` Draft Assets in [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases); public users can follow the same process after publication. Verify the checksum, end audio and quit the old app, then double-click to install into `/Applications`. Restart when prompted after driver installation. Register your voice; after export, validation and performance checks pass, select `BlackHole 2ch` in Doubao. Personal data is preserved.
 
 The repository is currently private, so access requires permission. No public complete release asset is available. GitHub's `Source code (zip)` is source, not an app installer. Developers can still use the [source installation guide](docs/INSTALL.en.md).
 
@@ -100,6 +100,6 @@ This preserves configuration, models, and enrollment. Older versions released ca
 - Setup incomplete: check the driver, microphone and registration progress in Settings. Source users can also run `uv run micforyou status`.
 - No text: check readiness, Doubao's `BlackHole 2ch` selection, and macOS microphone permission for the process actually capturing audio.
 - Microphone still active: pause and quitting the interface preserve audio. Choose End or run `uv run micforyou stop`.
-- Uninstall: end audio, quit, move `~/Applications/MicForYou.app` to Trash, and restore Doubao's input. Configuration, enrollment, and BlackHole are separate resources; back up or remove them as needed.
+- Uninstall: end audio, quit, move `/Applications/MicForYou.app` (and any old ZIP copy in `~/Applications`) to Trash, and restore Doubao's input. Configuration, enrollment, and BlackHole are separate resources; back up or remove them as needed.
 
 [Complete-bundle installation](docs/BUNDLED_APP.en.md) · [Source installation](docs/INSTALL.en.md) · [Menu-bar guide](docs/MENU_BAR_APP.md) · [Performance checks](docs/PERFORMANCE_GUIDE.md) · [Development history](docs/DEVELOPMENT_HISTORY.md) · [Video source](video/README.md)

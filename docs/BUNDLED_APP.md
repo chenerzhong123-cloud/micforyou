@@ -1,9 +1,9 @@
 # 完整 App：安装与首次使用
 
-0.2.0 的本地 Alpha 已内置 arm64 Python、推理依赖和通用 REAL-TSE 权重。
-用户不需要安装 Python、uv、Git 或手动下载模型。当前仍未公开发布；
-GitHub Releases 暂无经过完整验收的 0.2.0 资产。0.1.1 的菜单栏 ZIP
-是旧控制器包，不包含这些组件。
+0.2.1 完整安装包包含 App、arm64 Python、推理依赖、通用 REAL-TSE 权重和
+经集成授权的官方 BlackHole 2ch 0.7.1。无需另装 Python、uv、Git、音频驱动
+或手动下载模型。当前为 private GitHub Draft Release 验收包，尚未公开发布。
+0.1.1 ZIP 是旧控制器包；0.2.0 完整 ZIP 尚不含驱动，两者均非本次一体安装包。
 
 ## 推荐设备
 
@@ -18,15 +18,20 @@ GitHub Releases 暂无经过完整验收的 0.2.0 资产。0.1.1 的菜单栏 ZI
 
 ## 下载、安装与设置
 
-1. 对外发布后，在 [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases)
-   的 Assets 下载标注“完整包”的 `.app.zip` 和 checksum；不要下载
-   `Source code (zip)` 当作安装包。核对 checksum 后解压，将 App 放入
-   `~/Applications` 或 `/Applications`。
-2. 目前本地 Alpha 为 ad-hoc 签名，尚未 Developer ID 签名／公证。
-   首次打开可能被系统拦截，按 [Apple 官方说明](https://support.apple.com/en-us/102445)
-   对确认来源的 App 选择“仍要打开”。
-3. 打开菜单中的“设置”。缺少音频路由组件时点击“安装指引”，从官方安装
-   BlackHole 2ch 并重启 Mac，再点击“刷新”。驱动单独安装，未内嵌于 App。
+1. 有仓库访问权限的维护者可在 [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases)
+   的 `v0.2.1-local-alpha` Draft Assets 下载 `.pkg` 与 `.sha256`；对外发布后
+   普通用户使用同样流程。不要将 `Source code (zip)` 当作安装包。
+   在下载目录运行 `shasum -a 256 -c MicForYou-0.2.1-local-alpha-macos-arm64.sha256`。
+2. 安装前先结束音频、取消声音注册并退出旧版 App。双击 `.pkg`，按系统提示授权
+   管理员安装。App 固定安装到 `/Applications/MicForYou.app`，音频驱动安装到
+   `/Library/Audio/Plug-Ins/HAL`。安装器不会删除个人数据，也不会自动启动 App。
+   首次安装或升级驱动后按提示重启；已有同版或更高版驱动时跳过该组件。
+   若 `~/Applications` 仍有旧版，请启动 `/Applications` 中的新版本。
+3. 组合安装包尚未 Developer ID 签名／公证，App 为 ad-hoc 签名。
+   BlackHole 原始包的签名／公证不覆盖组合安装包。若系统拦截，按
+   [Apple 官方说明](https://support.apple.com/en-us/102445) 仅对确认来源的包选择“仍要打开”。
+   打开新 App 的“设置”；若驱动意外缺失，可点击“安装音频组件…”运行随 App
+   附带的官方离线修复安装器，重启后“刷新”，无需另行下载。
 4. 选择日常麦克风，点击“注册我的声音”，允许 MicForYou 使用麦克风。
    在安静环境自然朗读 45 秒。App 会自动导出模型、校验与测试性能。
    进度显示在设置窗口；可以取消或失败后重试，旧注册不会被失败结果替换。
@@ -35,6 +40,7 @@ GitHub Releases 暂无经过完整验收的 0.2.0 资产。0.1.1 的菜单栏 ZI
 
 暂停过滤时，原始麦克风音频继续输入，包括旁人和环境声。
 点击“结束”才停止本链路并释放麦克风。退出界面会保留后台音频。
+当前不自动切换系统默认输入；结束后需要时手动恢复实体麦克风。
 更换声音注册前先结束；更新 App 前先结束后台音频。
 
 ## 数据、更新与许可
@@ -52,6 +58,8 @@ App 移动或更新后会重新定位内部资源，保留个人数据。失败�
 [模型声明](../licenses/MODEL_NOTICES.md)。
 已识别的 LGPL／MPL 组件源码、许可证和替换说明随包附带，见
 [原生运行库声明](../licenses/NATIVE_NOTICES.md)。
+BlackHole 的官方二进制依据另行集成授权分发，源代码与二进制许可不能混同，见
+[BlackHole 声明](../licenses/BLACKHOLE_NOTICES.md)。
 
 ## 对外发布前仍待验收
 

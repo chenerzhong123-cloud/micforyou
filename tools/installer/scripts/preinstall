@@ -1,0 +1,27 @@
+#!/bin/sh
+# No application launch, data migration, device routing or service restart here.
+set -eu
+if [ "${3:-/}" != / ]; then
+    echo 'MicForYou: install on the startup volume only. / 仅支持启动磁盘。' >&2
+    exit 1
+fi
+# A running menu app can retain an old executable; a worker can read replaced files.
+# Read comm separately so executable paths containing spaces are supported.
+processes=$(/bin/ps -axo pid=,comm=)
+while read -r process_id executable; do
+    case "$executable" in
+        MicForYouMenuBar|*/MicForYouMenuBar)
+            echo 'MicForYou: end audio and quit the menu app before installing. / 请先结束音频并退出菜单栏应用。' >&2
+            exit 1 ;;
+        python3*|*/python3*)
+            arguments=$(/bin/ps -p "$process_id" -o args= 2>/dev/null || true)
+            case "$arguments" in
+                *run_real_tse_bridge.py*|*micforyou*setup-worker*)
+                    echo 'MicForYou: end audio or cancel voice registration before installing. / 请先结束音频或取消声音注册。' >&2
+                    exit 1 ;;
+            esac ;;
+    esac
+done <<EOF_PROCESSES
+$processes
+EOF_PROCESSES
+exit 0
