@@ -1,0 +1,17 @@
+{
+  "fps": 30,
+  "durationSeconds": 55,
+  "basename": "micforyou-promo-v3",
+  "scenes": [
+    {"id": "opening", "from": 0, "duration": 300},
+    {"id": "brand", "from": 300, "duration": 180},
+    {"id": "demo", "from": 480, "duration": 540},
+    {"id": "flow", "from": 1020, "duration": 210},
+    {"id": "features", "from": 1230, "duration": 210},
+    {"id": "ending", "from": 1440, "duration": 210}
+  ],
+  "demo": {"loadAt": 90, "runAt": 135, "pauseAt": 360},
+  "reviewFrames": [60, 150, 240, 390, 525, 585, 690, 870, 945, 1110, 1350, 1575],
+  "clickFrames": [570, 840],
+  "statusFrames": [615, 840]
+}

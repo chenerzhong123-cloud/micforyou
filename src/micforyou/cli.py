@@ -25,7 +25,10 @@ from .control import (
     refresh_state,
     start_managed_process,
     stop_managed_process,
+    switch_managed_mode,
 )
+from .runtime_control import state_lock
+from functools import wraps
 from .evaluation import create_mixtures, score_output
 from .product import (
     ProductConfig,
@@ -38,7 +41,7 @@ from .product import (
 from .recommendation import BenchmarkCandidate, recommend
 
 
-DEFAULT_WORK_DIR = Path("/Users/deuce/claudeproject/codexworks/micforyou")
+DEFAULT_WORK_DIR = default_config_path().parent / "work"
 
 
 def write_json(value: Any, destination: Path | None) -> None:
@@ -183,6 +186,11 @@ def product_status(config: ProductConfig) -> dict[str, Any]:
 
 
 def runtime_status(config_path: Path) -> dict[str, Any]:
+    with state_lock(default_state_path(config_path)):
+        return _runtime_status(config_path)
+
+
+def _runtime_status(config_path: Path) -> dict[str, Any]:
     state_path = default_state_path(config_path)
     state = load_state(state_path)
     if state is None:
@@ -193,7 +201,7 @@ def runtime_status(config_path: Path) -> dict[str, Any]:
         }
     state = refresh_state(state, state_path)
     health = None
-    if state.health_path and Path(state.health_path).exists():
+    if state.pid is not None and state.health_path and Path(state.health_path).exists():
         try:
             health = json.loads(Path(state.health_path).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -205,6 +213,16 @@ def runtime_status(config_path: Path) -> dict[str, Any]:
     }
 
 
+def configuration_command(function):
+    @wraps(function)
+    def run(args):
+        with state_lock(default_state_path(args.config)):
+            require_inactive(args.config)
+            return function(args)
+    return run
+
+
+@configuration_command
 def command_configure(args: argparse.Namespace) -> None:
     config = ProductConfig(
         input_device=args.input_device,
@@ -219,15 +237,30 @@ def command_configure(args: argparse.Namespace) -> None:
         project_root=args.project_root.resolve(),
         fault_policy=args.fault_policy,
         route_change_policy=args.route_change_policy,
+        frames_per_chunk=args.frames_per_chunk,
+        onnx_threads=args.onnx_threads,
+        prefill_ms=args.prefill_ms,
+    )
+
+    # Resolve both endpoints now so a typo never becomes a saved silent route.
+    devices = list_devices()
+    resolve_device(devices, config.input_device, "input")
+    resolve_device(devices, config.output_device, "output")
+    save_config(config, args.config)
+    write_json(
+        {"saved": str(args.config), "config": config.to_dict(),
+         "status": product_status(config)},
+        None,
     )
 
 
 def require_inactive(config_path: Path) -> None:
-    runtime = runtime_status(config_path)
-    if runtime.get("status") in {"STARTING", "RUNNING", "STOPPING"}:
-        raise ValueError("stop or pause MicForYou before changing its configuration")
+    runtime = _runtime_status(config_path)
+    if runtime.get("pid") is not None or runtime.get("status") in {"STARTING", "RUNNING", "STOPPING"}:
+        raise ValueError("end MicForYou before changing its configuration; paused filtering still captures audio")
 
 
+@configuration_command
 def command_set_input(args: argparse.Namespace) -> None:
     require_inactive(args.config)
     config = load_config(args.config)
@@ -245,6 +278,7 @@ def command_set_input(args: argparse.Namespace) -> None:
     )
 
 
+@configuration_command
 def command_set_policy(args: argparse.Namespace) -> None:
     require_inactive(args.config)
     config = load_config(args.config)
@@ -256,16 +290,6 @@ def command_set_policy(args: argparse.Namespace) -> None:
             "fault_policy": updated.fault_policy,
             "background_start_allowed": updated.fault_policy == "silence",
         },
-        None,
-    )
-    # Resolve both endpoints now so a typo never becomes a saved silent route.
-    devices = list_devices()
-    resolve_device(devices, config.input_device, "input")
-    resolve_device(devices, config.output_device, "output")
-    save_config(config, args.config)
-    write_json(
-        {"saved": str(args.config), "config": config.to_dict(),
-         "status": product_status(config)},
         None,
     )
 
@@ -318,26 +342,17 @@ def command_start(args: argparse.Namespace) -> None:
 
 
 def command_pause(args: argparse.Namespace) -> None:
-    write_json(
-        stop_managed_process(
-            state_path=default_state_path(args.config),
-            final_status="PAUSED",
-            timeout_seconds=args.timeout,
-        ).to_dict(),
-        None,
-    )
+    write_json(switch_managed_mode(
+        state_path=default_state_path(args.config), mode="passthrough",
+        timeout_seconds=args.timeout,
+    ).to_dict(), None)
 
 
 def command_resume(args: argparse.Namespace) -> None:
-    state_path = default_state_path(args.config)
-    state = load_state(state_path)
-    if state is None:
-        raise ValueError("MicForYou has not been paused; use start")
-    state = refresh_state(state, state_path)
-    if state.status != "PAUSED":
-        raise ValueError(f"MicForYou cannot resume from {state.status}; use start")
-    config = load_config(args.config)
-    write_json(start_background(config, args), None)
+    write_json(switch_managed_mode(
+        state_path=default_state_path(args.config), mode="tse",
+        timeout_seconds=args.timeout,
+    ).to_dict(), None)
 
 
 def command_stop(args: argparse.Namespace) -> None:
@@ -380,6 +395,7 @@ def command_run(args: argparse.Namespace) -> None:
     )
 
 
+@configuration_command
 def command_enroll(args: argparse.Namespace) -> None:
     require_inactive(args.config)
     config = load_config(args.config)
@@ -550,6 +566,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("continue_tse", "silence_on_route_change"),
         default="continue_tse",
     )
+    configure.add_argument("--frames-per-chunk", type=int, default=8, help="use a locally validated benchmark candidate")
+    configure.add_argument("--onnx-threads", type=int, default=1)
+    configure.add_argument("--prefill-ms", type=float, default=100.0)
     configure.set_defaults(func=command_configure)
 
     set_input = subparsers.add_parser(
@@ -587,19 +606,17 @@ def build_parser() -> argparse.ArgumentParser:
     start.set_defaults(func=command_start)
 
     pause = subparsers.add_parser(
-        "pause", help="stop capture safely and remember a paused state"
+        "pause", help="pause filtering; keep forwarding raw microphone audio"
     )
     pause.add_argument("--config", type=Path, default=default_config_path())
     pause.add_argument("--timeout", type=float, default=15.0)
     pause.set_defaults(func=command_pause)
 
     resume = subparsers.add_parser(
-        "resume", help="restart a paused bridge with fresh streaming state"
+        "resume", help="resume filtering in the same stream with fresh DSP state"
     )
     resume.add_argument("--config", type=Path, default=default_config_path())
-    resume.add_argument("--duration", type=float, default=0)
-    resume.add_argument("--result", type=Path)
-    resume.add_argument("--log", type=Path)
+    resume.add_argument("--timeout", type=float, default=5.0)
     resume.set_defaults(func=command_resume)
 
     stop = subparsers.add_parser("stop", help="stop the background bridge")
@@ -630,7 +647,7 @@ def main() -> None:
     args = parser.parse_args()
     try:
         args.func(args)
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+    except (ValueError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(2) from error
 

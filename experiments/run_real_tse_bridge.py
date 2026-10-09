@@ -41,6 +41,8 @@ from micforyou.bridging import (
     RecoveryCircuitBreaker,
     mono_to_stereo_passthrough,
 )
+from micforyou.modes import SwitchableBridge
+from micforyou.runtime_control import ControlServer
 from micforyou.recommendation import estimate_core_latency_ms
 from micforyou.runtime import (
     build_ort_cpu_session,
@@ -241,7 +243,11 @@ def main() -> None:
         type=Path,
         help="optional atomic lifecycle status for the product controller",
     )
+    parser.add_argument("--control-socket", type=Path)
+    parser.add_argument("--control-token")
     args = parser.parse_args()
+    if bool(args.control_socket) != bool(args.control_token):
+        raise SystemExit("control socket and token must be provided together")
 
     def write_health(status: str, detail: str, **values) -> None:
         if args.health_file is None:
@@ -350,6 +356,25 @@ def main() -> None:
     route_reconnections = 0
     route_reconnect_wait_seconds = 0.0
 
+    desired_mode = "tse"
+    last_revision = 0
+    route_ready = threading.Event()
+    engine = None
+
+    def handle_mode(mode: str, timeout: float) -> dict:
+        nonlocal desired_mode, last_revision
+        current = engine
+        if current is None or not route_ready.is_set():
+            raise ValueError("audio route is not ready; wait for RUNNING/PAUSED")
+        result = current.switch(mode, timeout)
+        if not route_ready.is_set() or current.fault.is_set():
+            raise ValueError("audio route failed during mode switch")
+        desired_mode = result["processing_mode"]
+        last_revision = result["mode_revision"]
+        return result
+
+    server = ControlServer(args.control_socket, args.control_token, handle_mode) if args.control_socket else None
+
     while True:
         attempt_started = time.monotonic()
         # Device indexes can change when a headset is unplugged. Resolve the
@@ -371,26 +396,47 @@ def main() -> None:
             route_open_error = f"selected route unavailable before open: {error}"
         # A recovery starts from fresh resamplers, STFT/OLA buffers, recurrent
         # state, queues and timestamps. No pre-stall audio can reach BlackHole.
-        if args.backend == "onnx":
-            tse = OnnxTseStream(
-                ort_session,
-                conditioning,
-                args.frames_per_chunk,
-                onnx_layer_count,
+        tse_generations = []
+        metrics_lock = threading.Lock()
+        attempt_calls = []
+
+        def harvest_metrics(final=False):
+            with metrics_lock:
+                retained = []
+                for tse, generation in tse_generations:
+                    if final or generation.worker_done.is_set():
+                        attempt_calls.extend(tse.call_ms)
+                    else:
+                        retained.append((tse, generation))
+                tse_generations[:] = retained
+                return len(attempt_calls) + sum(len(item.call_ms) for item, _ in retained)
+
+        def new_engine():
+            if args.backend == "onnx":
+                tse = OnnxTseStream(
+                    ort_session,
+                    conditioning,
+                    args.frames_per_chunk,
+                    onnx_layer_count,
+                )
+                transform, flush_transform = make_onnx_transform(tse)
+            else:
+                tse = CausalTseStream(
+                    model, conditioning, args.frames_per_chunk, torch.device("cpu")
+                )
+                transform, flush_transform = make_real_tse_transform(tse)
+            generation = BridgeEngine(
+                transform,
+                flush_transform,
+                input_bound_blocks=max(2, maximum_frames // args.audio_block),
+                ring_maximum_frames=maximum_frames,
+                output_prefill_frames=prefill_frames,
             )
-            transform, flush_transform = make_onnx_transform(tse)
-        else:
-            tse = CausalTseStream(
-                model, conditioning, args.frames_per_chunk, torch.device("cpu")
-            )
-            transform, flush_transform = make_real_tse_transform(tse)
-        engine = BridgeEngine(
-            transform,
-            flush_transform,
-            input_bound_blocks=max(2, maximum_frames // args.audio_block),
-            ring_maximum_frames=maximum_frames,
-            output_prefill_frames=prefill_frames,
-        )
+            with metrics_lock:
+                tse_generations.append((tse, generation))
+            return generation
+        engine = SwitchableBridge(new_engine, desired_mode, last_revision + len(attempts))
+        observed_revision = engine.revision
         ledger = LatencyLedger()
         capture_enabled = threading.Event()
         capture_enabled.set()
@@ -414,7 +460,7 @@ def main() -> None:
         def callback(indata, outdata, frames, time_info, status) -> None:
             nonlocal callback_count, input_underflow_count
             nonlocal startup_silence_frames, underrun_frames
-            nonlocal output_started, position_in
+            nonlocal output_started, position_in, ledger, observed_revision
             liveness.observe()
             callback_count += 1
             if status:
@@ -422,17 +468,23 @@ def main() -> None:
                 if getattr(status, "input_underflow", False):
                     input_underflow_count += 1
                     input_interrupted.set()
+                    capture_enabled.clear()
+                    engine.latch_fault("input device interrupted; output is silent")
             outdata.fill(0)
             arrival = time.perf_counter()
-            if capture_enabled.is_set():
-                engine.submit(indata[:frames, 0].copy())
+            block = indata[:frames, 0].copy() if capture_enabled.is_set() else None
+            mono, written = engine.process(block, frames)
+            if observed_revision != engine.revision:
+                ledger = LatencyLedger()
+                position_in = 0
+                output_started = False
+                observed_revision = engine.revision
+            if block is not None:
                 ledger.record_input(position_in, frames, arrival)
                 position_in += frames
-            mono, written = engine.write_output(frames)
             if written:
-                # Map by ring audio position, not the output slot: after
-                # underruns the slot runs ahead of buffered audio.
-                audio_start = engine.output_ring.total_popped - written
+                ring = engine.output_ring
+                audio_start = position_in - frames if engine.mode == "passthrough" else ring.total_popped - written
                 ledger.record_output(audio_start, written, time.perf_counter())
                 output_started = True
                 outdata[:, 0] = mono
@@ -455,26 +507,33 @@ def main() -> None:
                 callback=callback,
             ) as stream:
                 stream_latency = stream.latency
-                write_health(
-                    "RUNNING",
-                    "privacy-first TSE route is open",
-                    input_device=active_input_device.name,
-                    output_device=active_output_device.name,
-                    final_mode="tse",
-                    degraded=False,
-                )
+                route_ready.set()
+                def publish_mode():
+                    snapshot = engine.snapshot()
+                    write_health(
+                        "FAULT" if snapshot["processing_mode"] == "none" else "PAUSED" if snapshot["processing_mode"] == "passthrough" else "RUNNING",
+                        "raw microphone audio continues" if snapshot["processing_mode"] == "passthrough" else "TSE filtering is active",
+                        input_device=active_input_device.name,
+                        output_device=active_output_device.name,
+                        final_mode=snapshot["processing_mode"], degraded=snapshot["processing_mode"] == "none", **snapshot,
+                    )
+                publish_mode()
                 while not engine.fault.is_set():
                     if deadline is not None and time.monotonic() >= deadline:
                         break
                     sd.sleep(100)
+                    if not engine.fault.is_set():
+                        publish_mode()
                     now = time.monotonic()
+                    model_calls = harvest_metrics()
                     if now >= next_pressure_sample:
                         pressure_samples.append(
                             {
                                 "elapsed_seconds": now - started,
-                                "input_queue_blocks": engine.input_queue.qsize(),
-                                "output_ring_frames": engine.output_ring.available(),
-                                "model_calls": len(tse.call_ms),
+                                "input_queue_blocks": engine.engine.input_queue.qsize() if engine.engine else 0,
+                                "output_ring_frames": engine.output_ring.available() if engine.output_ring else 0,
+                                "model_calls": model_calls,
+                                **engine.snapshot(),
                             }
                         )
                         next_pressure_sample = now + 5
@@ -553,10 +612,11 @@ def main() -> None:
                                         final_mode="tse",
                                         degraded=True,
                                     )
+                route_ready.clear()
                 capture_enabled.clear()
                 engine.finish(timeout=10)
                 drain_deadline = time.monotonic() + 2
-                while engine.output_ring.available() and time.monotonic() < drain_deadline:
+                while engine.output_ring is not None and engine.output_ring.available() and time.monotonic() < drain_deadline:
                     sd.sleep(10)
         except KeyboardInterrupt:
             interrupted = True
@@ -566,16 +626,18 @@ def main() -> None:
             engine.latch_fault(f"audio stream failed: {error!r}")
             engine.finish(timeout=10)
         finally:
+            route_ready.clear()
             capture_enabled.clear()
 
-        all_call_ms.extend(tse.call_ms)
+        harvest_metrics(final=True)
+        all_call_ms.extend(attempt_calls)
         attempt = {
             "attempt": len(attempts) + 1,
             "status": "FAULT" if engine.fault.is_set() else "STOPPED",
             "callback_stall": stalled,
             "portaudio_stream_latency_seconds": stream_latency,
             "callback_count": callback_count,
-            "model_call_count": len(tse.call_ms),
+            "model_call_count": len(attempt_calls),
             "engine": engine.stats(),
             "bridge_latency": ledger.summary(),
             "startup_silence_ms": startup_silence_frames / sample_rate * 1000,
@@ -595,9 +657,12 @@ def main() -> None:
             "recovery_planned": False,
         }
         attempts.append(attempt)
+        faulted = engine.fault.is_set()
+        engine.close()
+        if faulted:
+            write_health("RECOVERING", "audio route failed; output is silent", processing_mode="none", mode_revision=last_revision, degraded=True)
 
         duration_finished = deadline is not None and time.monotonic() >= deadline
-        faulted = engine.fault.is_set()
         if (
             route_lost
             and args.route_change_policy == "silence_on_route_change"
@@ -667,6 +732,8 @@ def main() -> None:
         attempt["recovery_planned"] = True
         sd.sleep(round(args.restart_delay_ms))
 
+    if server is not None:
+        server.close()
     passthrough_report: dict | None = None
     if fallback_reason is not None and not interrupted:
         passthrough_started = time.monotonic()
@@ -758,7 +825,7 @@ def main() -> None:
         if passthrough_report is not None
         else final_attempt["status"]
     )
-    final_mode = "passthrough" if passthrough_report is not None else "tse"
+    final_mode = "passthrough" if passthrough_report is not None else desired_mode
     result = {
         "status": final_status,
         "final_mode": final_mode,

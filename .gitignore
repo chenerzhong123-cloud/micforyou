@@ -2,6 +2,7 @@
 __pycache__/
 .pytest_cache/
 *.pyc
+.DS_Store
 
 # Real enrollment/test audio must stay local and outside version control.
 local-data/

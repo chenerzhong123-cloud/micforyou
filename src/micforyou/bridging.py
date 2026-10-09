@@ -429,6 +429,20 @@ class BridgeEngine:
         done = self.worker_done.wait(timeout=timeout)
         return bool(done)
 
+    def discard(self) -> None:
+        """Retire this generation without flushing pending model audio."""
+        self.latch_fault("streaming generation retired")
+        while True:
+            try:
+                self.input_queue.get_nowait()
+            except queue.Empty:
+                break
+        # A worker already awaiting get() still needs a wake-up sentinel.
+        try:
+            self.input_queue.put_nowait(None)
+        except queue.Full:
+            pass  # another retire caller already supplied the sentinel
+
     def stats(self) -> dict:
         return {
             "fault": self.fault.is_set(),

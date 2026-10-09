@@ -6,14 +6,16 @@
 
 - 菜单栏只保留状态、音频链路和当前推荐操作，设备与声纹管理移入设置窗口；
 - 常驻显示 `STARTING / RUNNING / RECOVERING / DEGRADED / PAUSED / STOPPED / FAULT`；
-- 开始、暂停、继续和停止隐私优先后台桥；
-- 暂停后可直接结束，不必先恢复音频进程；
+- 开始过滤、暂停过滤（原音继续输入）、继续过滤和结束后台音频；
+- 暂停期间保留同一 PID 与 Stream，只有结束才释放麦克风；
 - 选择已存在的实体麦克风；原设备消失时不会自动改用其他麦克风；
 - 在停止状态发起 45 秒重新注册；只有 ONNX correctness PASS 才替换旧注册；
 - 固定显示 Experimental Alpha 身份，并在设置中说明质量边界；运行中持续提示豆包必须选择 `BlackHole 2ch`；
 - 打开当前运行日志；日志不包含音频、embedding 或豆包文字。
 
-菜单栏应用只允许通过后台控制器启动 `fault_policy=silence`。连续优先的 raw passthrough 仍需在可见 Terminal 中运行，直到 UI 能保证 degraded 警告在应用退出后仍持续可见。
+菜单栏应用只允许通过后台控制器启动 `fault_policy=silence`。故障后的连续优先 raw passthrough 仍需在可见 Terminal 中运行，直到 UI 能保证 degraded 警告在应用退出后仍持续可见。
+
+正式品牌 Logo 已于 2026-10-08 选定为 **C01 · M 声路**。应用图标和菜单面板头部使用该稿；顶部菜单栏保留启停状态图标。资源来源、构建派生与清查边界见 [`BRANDING.md`](BRANDING.md)。
 
 ## 构建
 
@@ -52,3 +54,8 @@ app/MicForYouMenuBar/.build/MicForYou.app
 - 极简双层界面已安装到 `~/Applications/MicForYou.app`，ad-hoc 签名校验通过，安装版本进程稳定启动；没有添加开机启动项，也没有启动音频 bridge；
 - 当前 Mac A 保存的输入设备 `External Microphone` 未连接，因此应用应显示“尚未就绪”，开始按钮禁用。这是预期安全行为。
 - 菜单栏应用属于 `LSUIElement`，当前自动化工具无法绑定其无窗口状态；菜单视觉、设置窗口、重新注册确认框与真实 TSE 启停仍需用户 UI 验收，不能提前标记通过。
+
+
+## 2026-10-08 暂停行为更新
+
+暂停过滤后显示「过滤已暂停 / 原始声音继续输入」，常驻提示原音包含身旁人声。设置在过滤和原音暂停期间均禁止换麦与重新注册，需先结束。旧版已释放的 PAUSED 显示为可重新开始，不自动开麦。软件检查、真实 ONNX 合成回调与剩余真机验收见 [验证记录](PAUSE_PASSTHROUGH_VALIDATION.md)。面向新用户的中英文安装流程见 [中文](INSTALL.md) / [English](INSTALL.en.md)。

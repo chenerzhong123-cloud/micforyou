@@ -86,7 +86,7 @@ struct SettingsView: View {
             }
 
             if isActive {
-                Label("过滤运行时不能切换麦克风或重新注册。请先在菜单中暂停或结束。", systemImage: "info.circle")
+                Label("过滤或原音直通时不能切换麦克风或重新注册。请先在菜单中结束。", systemImage: "info.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

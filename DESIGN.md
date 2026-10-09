@@ -90,7 +90,7 @@ REAL-TSE 官方 `tfmap_context_causal_100` 是已通过离线质量和 stateful 
 
 可提供用户明确选择的“连续优先”策略：恢复预算耗尽后停止 TSE 推理，并把同一个已选实体麦克风的原音低开销转发到 BlackHole，保持豆包会话可用。该模式不能默认启用，不能自动换麦，界面必须持续显示“原音透传、未过滤他人声音”，诊断中标记 degraded、原因和持续时间。重新启用过滤必须重建全部 TSE 流状态。耳机断连不自动改用 Mac 内置麦克风。提供明确的恢复原麦克风操作。
 
-若程序修改了系统默认输入，恢复时只撤销本程序仍持有的修改；用户期间手动改过设置则不覆盖。异常退出后应有恢复说明。暂停或退出释放实体麦克风，不默认开机常驻采集。
+若程序修改了系统默认输入，恢复时只撤销本程序仍持有的修改；用户期间手动改过设置则不覆盖。异常退出后应有恢复说明。暂停过滤保留麦克风并原音直通，结束才释放实体麦克风；退出界面保留后台音频模式。不默认开机常驻采集。
 
 ## 来源与证据边界
 
@@ -99,3 +99,8 @@ REAL-TSE 官方 `tfmap_context_causal_100` 是已通过离线质量和 stateful 
 - OpenSpeakerBeam-SS：https://github.com/helloooideeeeea/OpenSpeakerBeam-SS
 
 阶段证据见 `docs/STAGE_A.md`、`docs/STAGE_B.md` 和 `docs/STAGE_C.md`。长期经验参考文件 `/Users/deuce/obsidian/obsidian/formal/codex-experience-profile.md` 在本次会话中读取失败，未据此推定额外偏好。
+
+
+## 暂停原音直通（2026-10-08）
+
+同一个 duplex Stream 内，通过当前用户专属 Unix domain socket 提交处理模式请求，在音频块边界确认。模式切换不重开设备，不改输入法选择；暂停原音不经过模型、重采样或额外增益。旧 worker 退休时丢弃队列与输出，继续过滤创建新的 STFT/OLA、resampler 和 recurrent state。状态 schema 升级为 runtime-state/2，兼容读取旧版已停止的 PAUSED，禁止自动开麦。完整行为与验证范围见 [验收记录](docs/PAUSE_PASSTHROUGH_VALIDATION.md)。

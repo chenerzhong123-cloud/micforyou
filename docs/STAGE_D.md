@@ -32,22 +32,22 @@ uv run micforyou start
 4. 后台运行期间可关闭 Terminal。控制命令为：
 
 ```bash
-uv run micforyou pause   # 释放麦克风，并记为 PAUSED
-uv run micforyou resume  # 重建全部 TSE 流状态后继续
+uv run micforyou pause   # 暂停过滤，原音继续输入，麦克风仍在使用
+uv run micforyou resume  # 在同一音频进程和 Stream 内重建过滤状态后继续
 uv run micforyou stop    # 释放麦克风，并记为 STOPPED
 ```
 
 5. 停止后按需把豆包麦克风恢复为日常物理麦克风。
 
-后台控制状态保存在 `~/Library/Application Support/MicForYou/state.json`；日志只含运行事件和指标，不含音频或豆包文字。`pause` 不是在可能污染的模型 state 上冻结线程，而是安全关闭流；`resume` 会重新建立 resampler、STFT/OLA、recurrent state 和有界队列。
+后台控制状态保存在 `~/Library/Application Support/MicForYou/state.json`；日志只含运行事件和指标，不含音频或豆包文字。`pause` 在音频块边界切到原音直通，丢弃旧过滤队列与输出；`resume` 保持设备不重开，建立新的 resampler、STFT/OLA、recurrent state 和有界队列后切回过滤。原音含旁人及环境声音，只有 `stop` 才释放麦克风。
 
-同一组操作已由 [原生菜单栏应用](MENU_BAR_APP.md)封装，包括实体麦克风选择和重新注册确认。菜单栏退出不会暗中停止一个仍在运行的隐私优先 bridge，按钮会明确显示“退出界面（过滤继续）”。
+同一组操作已由 [原生菜单栏应用](MENU_BAR_APP.md)封装，包括实体麦克风选择和重新注册确认。菜单栏退出不会暗中停止一个仍在运行的隐私优先 bridge，按钮会明确显示“退出界面（音频继续）”。
 
 仍保留 `uv run micforyou run` 作为前台诊断模式，可用 `Control-C` 停止。
 
 ## 更换实体麦克风
 
-先停止或暂停，再列出设备并只修改输入项：
+先结束音频，再列出设备并只修改输入项：
 
 ```bash
 uv run micforyou devices
@@ -66,7 +66,7 @@ MicForYou 从不修改系统默认输入，所以“恢复原输入”只涉及�
 
 停止后可运行 `uv run micforyou set-policy silence|passthrough` 切换策略，不能在运行中静默切换。不会自动选择另一支麦克风。
 
-默认 `continue_tse` 会在已选物理输入消失时保持静音、等待最多 120 秒；同名输入重新出现后，以重新解析的设备索引重开同一条 TSE → BlackHole 链路。运行中同时检查 PortAudio `input_underflow` 和短命独立进程取得的新 CoreAudio 设备清单；无法确认原设备仍在时按失败关闭处理。它不依赖 macOS 将旧流自动接到内置麦克风，也不会 raw passthrough。若有意改用另一支麦克风，请先用 `configure` 明确更改 `--input-device`，再开始新的运行。
+默认 `continue_tse` 会在已选物理输入消失时保持静音、等待最多 120 秒；同名输入重新出现后，以重新解析的设备索引重开同一条 TSE → BlackHole 链路。运行中同时检查 PortAudio `input_underflow` 和短命独立进程取得的新 CoreAudio 设备清单；无法确认原设备仍在时按失败关闭处理。它不依赖 macOS 将旧流自动接到内置麦克风。故障默认静音；主动暂停则明确输出所选设备原音，断链恢复保留用户选择的处理模式。若有意改用另一支麦克风，请先用 `configure` 明确更改 `--input-device`，再开始新的运行。
 
 ### 2026-09-21 真实拔插验收
 
@@ -98,8 +98,8 @@ uv run micforyou enroll
 - REAL-TSE 源码/权重尚无足够清晰的统一分发许可，当前只作为本机原型，不能宣称可商业分发。
 - Mac A 30 分钟峰值 RSS 约 1.03 GB，后续应优化；Mac B M1 不能使用这套性能结论。
 - 当前独立设备清单检查每秒启动一个短命 Python 进程，优先保证 CLI 原型的隐私边界；它使本次平均 CPU 使用高于此前稳定性基线。原生应用阶段应改成 CoreAudio 设备属性监听，避免轮询进程开销。
-- 当前是具备后台生命周期控制的 CLI MVP，菜单栏 UI 尚未实现。隐私优先后台模式可关闭 Terminal；连续优先仍要求前台可见。
-- `pause/resume` 已实现为安全释放与完整重建，不复用旧的流式模型状态。
+- 当前具备 CLI 与原生菜单栏 UI。隐私优先后台模式可关闭 Terminal；连续优先仍要求前台可见。
+- `pause/resume` 已实现为同一 Stream 内的过滤 / 原音切换，继续时不复用旧流式模型状态；本次自动与合成输入验证见 [记录](PAUSE_PASSTHROUGH_VALIDATION.md)，真实麦克风与输入法验收仍待完成。
 
 ## 卸载/恢复
 

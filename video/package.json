@@ -1,0 +1,26 @@
+{
+  "name": "micforyou-promo",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "remotion studio src/index.ts",
+    "lint": "tsc --noEmit",
+    "sound": "python3 scripts/make_sound.py",
+    "render": "remotion render src/index.ts MicForYouPromo out/micforyou-promo-v4.mp4",
+    "master": "bash scripts/master_audio.sh",
+    "stills": "node scripts/review.mjs"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.533",
+    "@remotion/cli": "4.0.533",
+    "@remotion/renderer": "4.0.533",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.533"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "typescript": "5.9.3"
+  }
+}

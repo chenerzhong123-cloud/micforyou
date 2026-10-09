@@ -12,6 +12,7 @@ struct ModelCheck {
           "device_errors": [],
           "quality_notice": "partial filtering only",
           "runtime": {
+            "pid": 1234,
             "status": "STARTING",
             "detail": "process started",
             "log_path": "/tmp/bridge.log",
@@ -38,10 +39,28 @@ struct ModelCheck {
             logPath: "/tmp/bridge.log",
             bridgeHealth: BridgeHealth(
                 status: "STOPPED", detail: "bridge finished",
-                finalMode: "tse", degraded: false
-            )
+                finalMode: "tse", degraded: false, modeRevision: 0
+            ), pid: nil, processingMode: nil, modeRevision: nil
         )
-        precondition(paused.effectiveStatus == "PAUSED")
+        precondition(paused.effectiveStatus == "STOPPED")
+        precondition(!paused.isActive)
+        let rawData = Data(#"""
+        {"status":"PAUSED","pid":1234,"processing_mode":"passthrough","mode_revision":2,
+         "detail":"raw continues","bridge_health":{"status":"PAUSED","final_mode":"passthrough","mode_revision":2,"degraded":false}}
+        """#.utf8)
+        let raw = try JSONDecoder().decode(RuntimeStatus.self, from: rawData)
+        precondition(raw.effectiveStatus == "PAUSED")
+        precondition(raw.isActive)
+        precondition(StatusAppearance.forStatus("PAUSED") == .warning)
+        let fault = RuntimeStatus(status: "PAUSED", detail: "raw", logPath: nil,
+            bridgeHealth: BridgeHealth(status: "FAULT", detail: "device lost", finalMode: "none", degraded: true, modeRevision: 2),
+            pid: 1234, processingMode: "passthrough", modeRevision: 2)
+        precondition(fault.effectiveStatus == "FAULT")
+        precondition(fault.isActive)
+        let stale = RuntimeStatus(status: "PAUSED", detail: "raw", logPath: nil,
+            bridgeHealth: BridgeHealth(status: "RUNNING", detail: "old mode", finalMode: "tse", degraded: false, modeRevision: 1),
+            pid: 1234, processingMode: "passthrough", modeRevision: 2)
+        precondition(stale.effectiveStatus == "PAUSED")
         print("MicForYouMenuBar model check PASS")
     }
 }

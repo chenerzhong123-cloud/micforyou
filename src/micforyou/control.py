@@ -1,7 +1,7 @@
 """Lifecycle control for the Stage-D background bridge.
 
 The controller stores metadata only.  It never stores audio, embeddings, or
-transcripts.  Every background bridge is its own process group so pause/stop
+transcripts.  Every background bridge is its own process group so stop
 can interrupt the exact process started by MicForYou without touching other
 Python processes.
 """
@@ -15,12 +15,15 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import tempfile
 import time
 from typing import Callable
+from .runtime_control import new_control_endpoint, send_mode, state_lock
+from functools import wraps
 
 
-CONTROL_SCHEMA = "micforyou/runtime-state/1"
-ACTIVE_STATES = {"STARTING", "RUNNING", "STOPPING"}
+CONTROL_SCHEMA = "micforyou/runtime-state/2"
+ACTIVE_STATES = {"STARTING", "RUNNING", "PAUSED", "STOPPING"}
 
 
 def now_iso() -> str:
@@ -47,13 +50,18 @@ class RuntimeState:
     log_path: str | None
     detail: str | None = None
     health_path: str | None = None
+    control_path: str | None = None
+    control_token: str | None = None
+    processing_mode: str = "none"
+    mode_reason: str | None = None
+    mode_revision: int = 0
 
     def to_dict(self) -> dict:
         return {"schema": CONTROL_SCHEMA, **asdict(self)}
 
     @classmethod
     def from_dict(cls, payload: dict) -> "RuntimeState":
-        if payload.get("schema") != CONTROL_SCHEMA:
+        if payload.get("schema") not in {CONTROL_SCHEMA, "micforyou/runtime-state/1"}:
             raise ValueError("unsupported MicForYou runtime-state schema")
         values = dict(payload)
         values.pop("schema")
@@ -67,12 +75,14 @@ class RuntimeState:
 
 def save_state(state: RuntimeState, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_suffix(destination.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(state.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(destination)
+    # NamedTemporaryFile creates mode 0600 before the runtime token is written.
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=destination.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        stream.write(json.dumps(state.to_dict(), ensure_ascii=False, indent=2) + "\n")
+    try:
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def load_state(source: Path) -> RuntimeState | None:
@@ -109,7 +119,7 @@ def owns_process(
 
 
 def refresh_state(state: RuntimeState, state_path: Path) -> RuntimeState:
-    if state.status not in ACTIVE_STATES or owns_process(state):
+    if state.pid is None or owns_process(state):
         return state
     detail = "managed bridge exited"
     final_status = "FAULT"
@@ -145,6 +155,15 @@ def refresh_state(state: RuntimeState, state_path: Path) -> RuntimeState:
     return refreshed
 
 
+def serialized_command(function):
+    @wraps(function)
+    def run(*args, **kwargs):
+        with state_lock(kwargs["state_path"]):
+            return function(*args, **kwargs)
+    return run
+
+
+@serialized_command
 def start_managed_process(
     command: list[str],
     *,
@@ -159,9 +178,12 @@ def start_managed_process(
     previous = load_state(state_path)
     if previous is not None:
         previous = refresh_state(previous, state_path)
-        if previous.status in ACTIVE_STATES and owns_process(previous):
+        if owns_process(previous):
             raise ValueError(f"MicForYou is already running (pid {previous.pid})")
 
+    control_path, control_token = new_control_endpoint()
+    command = [*command, "--control-socket", str(control_path), "--control-token", control_token]
+    process_marker = control_token
     log_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.parent.mkdir(parents=True, exist_ok=True)
     started_at = now_iso()
@@ -176,6 +198,8 @@ def start_managed_process(
         log_path=str(log_path),
         detail="launching privacy-first TSE bridge",
         health_path=str(health_path) if health_path else None,
+        control_path=str(control_path),
+        control_token=control_token,
     )
     save_state(starting, state_path)
     try:
@@ -210,26 +234,29 @@ def start_managed_process(
         log_path=str(log_path),
         detail="bridge process started; waiting for the audio route to open",
         health_path=str(health_path) if health_path else None,
+        control_path=str(control_path),
+        control_token=control_token,
     )
     save_state(running, state_path)
     return running
 
 
+@serialized_command
 def stop_managed_process(
     *,
     state_path: Path,
     final_status: str,
     timeout_seconds: float = 15.0,
 ) -> RuntimeState:
-    if final_status not in {"PAUSED", "STOPPED"}:
-        raise ValueError("final_status must be PAUSED or STOPPED")
+    if final_status != "STOPPED":
+        raise ValueError("pause switches mode; stop final_status must be STOPPED")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
     state = load_state(state_path)
     if state is None:
         raise ValueError("MicForYou has no runtime state")
     state = refresh_state(state, state_path)
-    if state.status == "PAUSED" and final_status == "STOPPED":
+    if state.status == "PAUSED" and state.pid is None:
         stopped = RuntimeState(
             **{
                 **asdict(state),
@@ -240,7 +267,7 @@ def stop_managed_process(
         )
         save_state(stopped, state_path)
         return stopped
-    if state.status not in ACTIVE_STATES:
+    if state.pid is None:
         if state.status == final_status:
             return state
         raise ValueError(f"MicForYou is not running (status {state.status})")
@@ -291,11 +318,33 @@ def stop_managed_process(
         result_path=state.result_path,
         log_path=state.log_path,
         detail=(
-            "microphone released; resume rebuilds all TSE streaming state"
-            if final_status == "PAUSED"
-            else "microphone released; bridge stopped"
+            "microphone released; bridge stopped"
         ),
         health_path=state.health_path,
     )
     save_state(stopped, state_path)
     return stopped
+
+
+@serialized_command
+def switch_managed_mode(*, state_path: Path, mode: str, timeout_seconds: float = 5) -> RuntimeState:
+    state = load_state(state_path)
+    if state is None:
+        raise ValueError("MicForYou has not been started; use start")
+    state = refresh_state(state, state_path)
+    if not owns_process(state) or not state.control_path or not state.control_token:
+        raise ValueError("no live controllable bridge; use start (old paused state is stopped)")
+    if state.status == "STOPPING":
+        raise ValueError("MicForYou is ending")
+    result = send_mode(Path(state.control_path), state.control_token, state.pid, mode, timeout_seconds)
+    changed = RuntimeState(**{
+        **asdict(state),
+        "status": "PAUSED" if mode == "passthrough" else "RUNNING",
+        "updated_at": now_iso(),
+        "processing_mode": result["processing_mode"],
+        "mode_reason": result.get("mode_reason"),
+        "mode_revision": result["mode_revision"],
+        "detail": "raw microphone audio continues" if mode == "passthrough" else "filtering resumed with fresh streaming state",
+    })
+    save_state(changed, state_path)
+    return changed

@@ -46,14 +46,19 @@ struct MenuContentView: View {
 
     private var header: some View {
         HStack(spacing: 11) {
-            ZStack {
-                Circle()
-                    .fill(statusColor.opacity(0.12))
-                    .frame(width: 38, height: 38)
-                Image(systemName: iconName)
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(statusColor)
-            }
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 38, height: 38)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(alignment: .bottomTrailing) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 9, height: 9)
+                        .overlay(Circle().stroke(.background, lineWidth: 2))
+                        .accessibilityHidden(true)
+                }
+                .accessibilityLabel("MicForYou")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(statusLabel)
@@ -106,7 +111,7 @@ struct MenuContentView: View {
             }
         } else if ["RUNNING", "DEGRADED"].contains(runtimeStatus) {
             HStack {
-                actionButton("暂停", systemImage: "pause.fill", command: "pause", prominent: true)
+                actionButton("暂停过滤", systemImage: "pause.fill", command: "pause", prominent: true)
                 actionButton("结束", systemImage: "stop.fill", command: "stop")
             }
         } else if ["STARTING", "RECOVERING", "STOPPING"].contains(runtimeStatus) {
@@ -120,6 +125,8 @@ struct MenuContentView: View {
                 .disabled(true)
                 actionButton("结束", systemImage: "stop.fill", command: "stop")
             }
+        } else if model.status?.runtime.isActive == true {
+            actionButton("结束", systemImage: "stop.fill", command: "stop")
         } else if model.status?.ready == true {
             actionButton(
                 runtimeStatus == "FAULT" ? "重新尝试" : "开始过滤",
@@ -180,7 +187,7 @@ struct MenuContentView: View {
 
             Spacer()
             Button("退出界面") { NSApplication.shared.terminate(nil) }
-                .help(model.status?.runtime.isActive == true ? "过滤会继续在后台运行" : "退出 MicForYou 界面")
+                .help(model.status?.runtime.isActive == true ? "音频会继续在后台运行；结束才释放麦克风" : "退出 MicForYou 界面")
         }
         .font(.caption)
         .buttonStyle(.plain)
@@ -198,7 +205,7 @@ struct MenuContentView: View {
         case "FAULT":
             return ("已安全静音。可检查设备后重新尝试", "speaker.slash.fill", .red)
         case "PAUSED":
-            return ("实体麦克风已释放；继续时会重建过滤状态", "pause.circle", .secondary)
+            return ("原音直通中，包含身旁人声；结束才释放麦克风", "pause.circle", .orange)
         default:
             if let error = model.status?.deviceErrors.first {
                 return (error, "mic.slash", .orange)
@@ -214,7 +221,7 @@ struct MenuContentView: View {
         case "RECOVERING": "正在恢复"
         case "STOPPING": "正在结束"
         case "DEGRADED": "原音透传"
-        case "PAUSED": "已暂停"
+        case "PAUSED": "过滤已暂停"
         case "FAULT": "已安全静音"
         case "STOPPED": model.status?.ready == true ? "可以开始" : "需要完成设置"
         default: "正在读取状态"
@@ -228,19 +235,10 @@ struct MenuContentView: View {
         case "RECOVERING": "异常片段已跳过"
         case "STOPPING": "正在释放麦克风"
         case "DEGRADED": "连续优先模式"
-        case "PAUSED": "BlackHole 当前无输出"
+        case "PAUSED": "原始声音继续输入"
         case "FAULT": "隐私优先模式"
         case "STOPPED": model.status?.ready == true ? "隐私优先 · 故障时静音" : "检查实体麦克风"
         default: "MicForYou"
-        }
-    }
-
-    private var iconName: String {
-        switch appearance {
-        case .good: "waveform.badge.mic"
-        case .warning: "arrow.triangle.2.circlepath"
-        case .danger: "exclamationmark.shield.fill"
-        case .neutral: runtimeStatus == "PAUSED" ? "pause.fill" : "mic.slash"
         }
     }
 

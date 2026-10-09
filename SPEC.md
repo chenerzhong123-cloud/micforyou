@@ -67,7 +67,7 @@ MUST 保留豆包的 ASR 和文字处理。MUST 使用参考语音条件的人�
 | Controller | 配置、设备事件、启停 | 状态转换、恢复和错误提示 |
 | Metrics | 各阶段计时、计数器 | 不含语音内容的本地诊断日志 |
 
-建议状态：UNCONFIGURED、READY、RUNNING、RECOVERING、PAUSED、FAULT。RUNNING 遇到单次块处理、队列或 callback 异常先进入 RECOVERING：立即静音、清空待播和过期输入，关闭旧 stream，重建 resampler、STFT/OLA、模型 recurrent state 和有界队列，然后只重开原来的实体输入与 BlackHole 输出。不能在状态可能污染时只跳过一个块继续。滚动时间窗内超过恢复预算、同一错误持续出现、设备仍不可用或模型初始化失败时进入锁定 FAULT。所有恢复须记录原因、静音/丢弃时长和次数；不能把恢复后的运行报告为无故障。PAUSED/退出释放实体输入；恢复采集必须有显式启用动作。不能静默切换到其他实体麦克风。
+建议状态：UNCONFIGURED、READY、RUNNING、RECOVERING、PAUSED、FAULT。RUNNING 遇到单次块处理、队列或 callback 异常先进入 RECOVERING：立即静音、清空待播和过期输入，关闭旧 stream，重建 resampler、STFT/OLA、模型 recurrent state 和有界队列，然后只重开原来的实体输入与 BlackHole 输出。不能在状态可能污染时只跳过一个块继续。滚动时间窗内超过恢复预算、同一错误持续出现、设备仍不可用或模型初始化失败时进入锁定 FAULT。所有恢复须记录原因、静音/丢弃时长和次数；不能把恢复后的运行报告为无故障。PAUSED 只暂停过滤：保留同一音频进程与 Stream，将所选实体麦克风的原音继续输出，界面持续提示原音状态。继续过滤重建 DSP 流式状态并在音频块边界切换。只有结束才释放实体输入；退出界面保留当前后台音频模式。旧版已释放的 PAUSED 记录不得自动开始采集。不能静默切换到其他实体麦克风。
 
 ## 4. 配置与数据
 
