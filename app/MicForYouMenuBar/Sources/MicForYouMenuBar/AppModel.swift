@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import AVFoundation
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -9,6 +10,11 @@ final class AppModel: ObservableObject {
     @Published var busy = false
     @Published var errorMessage: String?
     @Published var confirmEnrollment = false
+    @Published var setupJob: SetupJob?
+    @Published var driverInstalled = false
+    var isBundled: Bool { client?.isBundled == true }
+    var setupRunning: Bool { setupJob?.status == "RUNNING" }
+    var isWorking: Bool { busy || setupRunning }
 
     private var client: CLIClient?
 
@@ -25,7 +31,10 @@ final class AppModel: ObservableObject {
         do {
             let value = try await client.run(["status"], as: ProductStatus.self)
             status = value
-            selectedInput = value.inputDevice
+            if !value.inputDevice.isEmpty && !setupRunning { selectedInput = value.inputDevice }
+            if client.isBundled {
+                setupJob = try await client.run(["setup-status"], as: SetupJob.self)
+            }
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -36,16 +45,18 @@ final class AppModel: ObservableObject {
         guard let client else { return }
         do {
             let values = try await client.run(["devices"], as: [AudioDevice].self)
+            driverInstalled = values.contains { $0.name == "BlackHole 2ch" }
             devices = values.filter {
                 $0.maxInputChannels > 0 && !$0.name.localizedCaseInsensitiveContains("BlackHole")
             }
+            if selectedInput.isEmpty { selectedInput = devices.first?.name ?? "" }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func perform(_ command: String) async {
-        guard let client, !busy else { return }
+        guard let client, !isWorking else { return }
         busy = true
         defer { busy = false }
         do {
@@ -57,8 +68,42 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func enrollVoice() async {
+        guard let client, !isWorking else { return }
+        guard await AVCaptureDevice.requestAccess(for: .audio) else {
+            errorMessage = "请在系统设置 → 隐私与安全性 → 麦克风中允许 MicForYou 使用麦克风。"
+            return
+        }
+        if !client.isBundled {
+            await perform("enroll")
+            return
+        }
+        busy = true
+        defer { busy = false }
+        do {
+            setupJob = try await client.run(["setup-start", "--input-device", selectedInput],
+                                             as: SetupJob.self)
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func cancelSetup() async {
+        guard let client, setupRunning else { return }
+        do { _ = try await client.run(["setup-cancel"]) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    func openDriverGuide() {
+        NSWorkspace.shared.open(URL(string: "https://existential.audio/blackhole/")!)
+    }
+
+    func openLicenses() {
+        guard let root = Bundle.main.resourceURL else { return }
+        NSWorkspace.shared.open(root.appending(path: "Runtime/licenses/MODEL_NOTICES.md"))
+    }
+
     func changeInput() async {
-        guard let client, !busy, !selectedInput.isEmpty else { return }
+        guard let client, !isWorking, !selectedInput.isEmpty else { return }
         busy = true
         defer { busy = false }
         do {

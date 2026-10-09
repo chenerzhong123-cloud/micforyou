@@ -52,10 +52,13 @@ class OnnxTseStream:
         self.session = session
         self.frames_per_chunk = frames_per_chunk
         self.layer_count = layer_count
+        shape = next(item.shape for item in session.get_inputs() if item.name == "spec_ri")
+        self.static_frames = isinstance(shape[-1], int)
         self.stft = StreamingSTFT(512, 128, torch.device("cpu"))
         self.ola = StreamingOLA(512, 128, torch.device("cpu"))
         self.pending: list[torch.Tensor] = []
         self.call_ms: list[float] = []
+        self.call_times: list[float] = []
         self.static_feed = {
             "enroll_tfmap": conditioning["tfmap"].numpy().astype(np.float32),
             "enroll_context": conditioning["context"].numpy().astype(np.float32),
@@ -85,7 +88,7 @@ class OnnxTseStream:
 
     def _process(self, force: bool = False):
         outputs = []
-        if force and self.pending:
+        if force and self.pending and self.static_frames:
             # static-shape session: pad the final partial chunk with silence
             while len(self.pending) < self.frames_per_chunk:
                 self.pending.append(torch.zeros(1, 257, 1))
@@ -96,9 +99,12 @@ class OnnxTseStream:
             started = time.perf_counter()
             estimated = self._run_core(spec)
             outputs.extend(self.ola.push(estimated))
-            self.call_ms.append((time.perf_counter() - started) * 1000)
+            finished = time.perf_counter()
+            self.call_ms.append((finished - started) * 1000)
+            self.call_times.append(finished)
         return outputs
 
+    @torch.inference_mode()
     def feed(self, samples: np.ndarray) -> np.ndarray:
         self.pending.extend(self.stft.push(torch.from_numpy(samples)))
         outputs = self._process()
@@ -106,6 +112,7 @@ class OnnxTseStream:
             return np.empty(0, dtype=np.float32)
         return torch.cat(outputs, dim=-1).reshape(-1).numpy()
 
+    @torch.inference_mode()
     def flush(self) -> np.ndarray:
         self.pending.extend(self.stft.flush())
         outputs = self._process(force=True)

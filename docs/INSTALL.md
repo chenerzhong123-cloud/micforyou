@@ -1,5 +1,6 @@
 # 从 GitHub 安装 MicForYou
 
+> 0.2.0 本地完整 Alpha 请使用 [完整 App 指南](BUNDLED_APP.md)。本页保留开发者／源码安装步骤。
 [English](INSTALL.en.md) · [返回 README](../README.md)
 
 当前版本需要 Terminal 与本地模型设置；适合有 Python / Git 使用经验的用户。本指南使用用户自己的目录，不依赖开发者机器上的 `/Users/deuce/...` 路径。菜单栏界面要求 macOS 14+；当前模型在 M5 上验证过，在 M1 上未达到实时门槛。源码和应用外壳均不带模型权重。
@@ -66,7 +67,7 @@ test -f "$MFY_MODEL/avg_model.pt"
 test -f "$MFY_MODEL/config.yaml"
 ```
 
-权重的统一再分发许可尚不明确，因此 MicForYou 不重新打包或自动下载权重。上游下载不可用时，模型准备无法继续；只有 App 外壳无法替代这一步。已验证 checkpoint 的 SHA-256 与来源见 [模型记录](STAGE_B.md#license-boundary)。
+2026-10-09 作者回信已授予其自有代码和训练参数 Apache-2.0 许可，排除的 WeSpeaker ECAPA 预训练参数按官方 CC BY 4.0 声明处理。完整 App 可按这些分开的条款内置通用权重；见 [许可核查](MODEL_DISTRIBUTION_AUDIT.md) 与 [声明](../licenses/MODEL_NOTICES.md)。
 
 ## 4．注册、导出与校验
 

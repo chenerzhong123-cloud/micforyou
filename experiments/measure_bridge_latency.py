@@ -182,6 +182,8 @@ def run_simulated(
     segment_seconds: float,
     progress_every: float,
     drain_grace_seconds: float,
+    onnx_session=None,
+    prefill_ms: float | None = None,
 ) -> dict:
     total_frames = int(round(duration_seconds * SAMPLE_RATE))
     ticks = total_frames // audio_block
@@ -198,13 +200,20 @@ def run_simulated(
         block_frames=audio_block,
     )
 
-    stream = CausalTseStream(model, conditioning, frames, torch.device("cpu"))
-    transform, flush_transform = make_real_tse_transform(stream)
+    if onnx_session is None:
+        stream = CausalTseStream(model, conditioning, frames, torch.device("cpu"))
+        transform, flush_transform = make_real_tse_transform(stream)
+    else:
+        from benchmark_onnx_tse import OnnxTseStream, make_onnx_transform
+        stream = OnnxTseStream(onnx_session, conditioning, frames,
+                              len(model.sep_model.separator.separation))
+        transform, flush_transform = make_onnx_transform(stream)
     engine = BridgeEngine(
         transform,
         flush_transform,
         input_bound_blocks=max(2, maximum_frames // audio_block),
         ring_maximum_frames=maximum_frames,
+        output_prefill_frames=round(SAMPLE_RATE * (prefill_ms or 0) / 1000),
     )
     ledger = LatencyLedger()
     sampler = ResourceSampler()
@@ -394,6 +403,7 @@ def main() -> None:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--model-dir", type=Path, required=True)
     parser.add_argument("--enrollment", type=Path, required=True)
+    parser.add_argument("--enrollment-seconds", type=float, default=6.0)
     parser.add_argument("--frames-per-chunk", type=int, required=True)
     parser.add_argument("--duration", type=float, default=60.0)
     parser.add_argument("--audio-block", type=int, default=480)
@@ -412,6 +422,10 @@ def main() -> None:
     parser.add_argument("--drain-grace", type=float, default=2.0)
     parser.add_argument("--blackhole-roundtrip", action="store_true")
     parser.add_argument("--result", type=Path, required=True)
+    parser.add_argument("--backend", choices=["torch", "onnx"], default="torch")
+    parser.add_argument("--onnx", type=Path)
+    parser.add_argument("--onnx-threads", type=int, default=1)
+    parser.add_argument("--prefill-ms", type=float)
     args = parser.parse_args()
 
     if args.torch_threads is not None and args.torch_threads < 1:
@@ -433,8 +447,18 @@ def main() -> None:
         enrollment = torchaudio.functional.resample(
             enrollment, enrollment_rate, extractor.resample_rate
         )
+    from micforyou.runtime import select_enrollment_window
+    enrollment, _ = select_enrollment_window(
+        enrollment, int(extractor.resample_rate), args.enrollment_seconds)
     with torch.inference_mode():
         conditioning = precompute_conditioning(model, enrollment)
+    session = None
+    if args.backend == "onnx":
+        from micforyou.runtime import build_ort_cpu_session, validate_ort_conditioning_shapes
+        if args.onnx is None:
+            raise SystemExit("--onnx is required for the ONNX backend")
+        session, _ = build_ort_cpu_session(args.onnx, args.onnx_threads)
+        validate_ort_conditioning_shapes(session, conditioning)
 
     system = collect_system_info(
         {
@@ -462,10 +486,13 @@ def main() -> None:
             segment_seconds=args.segment_seconds,
             progress_every=args.progress_every,
             drain_grace_seconds=args.drain_grace,
+            onnx_session=session,
+            prefill_ms=args.prefill_ms,
         )
 
     payload = {
         "schema": "micforyou-latency-1",
+        "backend": args.backend,
         "generated_at": system["captured_at"],
         "system": system,
         "model": {

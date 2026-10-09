@@ -31,8 +31,23 @@ struct SavedConfig: Decodable {
 struct CLIClient: Sendable {
     let executable: URL
     let projectRoot: URL
+    var argumentsPrefix: [String] = []
+    var isBundled: Bool { !argumentsPrefix.isEmpty }
 
-    static func discover() throws -> CLIClient {
+    static func discover(resourceURL: URL? = Bundle.main.resourceURL) throws -> CLIClient {
+        if let resources = resourceURL {
+            let root = resources.appending(path: "Runtime")
+            let python = root.appending(path: "python/bin/python3.12")
+            let bootstrap = root.appending(path: "bootstrap.py")
+            if FileManager.default.fileExists(atPath: root.appending(path: "bundle-manifest.json").path) {
+                guard FileManager.default.isExecutableFile(atPath: python.path),
+                      FileManager.default.fileExists(atPath: bootstrap.path) else {
+                    throw CLIError.executableMissing(python.path)
+                }
+                return CLIClient(executable: python, projectRoot: root,
+                                 argumentsPrefix: ["-E", "-s", "-B", bootstrap.path])
+            }
+        }
         let support = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "Library/Application Support/MicForYou")
         let configURL = support.appending(path: "config.json")
@@ -73,7 +88,16 @@ struct CLIClient: Sendable {
                 try? FileManager.default.removeItem(at: outputURL)
             }
             process.executableURL = executable
-            process.arguments = arguments
+            process.arguments = argumentsPrefix + arguments
+            var environment = ProcessInfo.processInfo.environment
+            environment.removeValue(forKey: "PYTHONHOME")
+            environment.removeValue(forKey: "PYTHONPATH")
+            environment["PYTHONNOUSERSITE"] = "1"
+            environment["PYTHONDONTWRITEBYTECODE"] = "1"
+            if isBundled {
+                environment["MICFORYOU_BUNDLE_ROOT"] = projectRoot.path
+            }
+            process.environment = environment
             process.currentDirectoryURL = projectRoot
             process.standardInput = FileHandle.nullDevice
             process.standardOutput = output

@@ -65,7 +65,7 @@ The existing 16 kHz ECAPA branch was also evaluated as a possible target-presenc
 
 ## License boundary
 
-REAL-TSE source commit `2a540977a348fbaa92e623210505430e2cec608d`; causal TFMap weight SHA-256 `97c01b79b0cf1a5b914a4a3bc1113c1864752ebdd320f528e77a53202447fef2`. New source files carry Apache-2.0 SPDX headers, but the repository has no root license and the checkpoint license is not stated. It is acceptable for the current local experiment, not cleared for redistribution or a commercial product.
+REAL-TSE source commit `2a540977a348fbaa92e623210505430e2cec608d`; checkpoint SHA-256 `97c01b79b0cf1a5b914a4a3bc1113c1864752ebdd320f528e77a53202447fef2`. On 2026-10-09 the author granted Apache-2.0 for his own inference code and trained parameters. Third-party WeSpeaker ECAPA pretrained parameters are excluded and retain upstream CC BY 4.0 attribution. See [licensing evidence and scope](MODEL_DISTRIBUTION_AUDIT.md) and [distribution notices](../licenses/MODEL_NOTICES.md).
 
 ## Remaining gate
 

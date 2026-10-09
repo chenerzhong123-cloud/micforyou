@@ -8,11 +8,12 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("MicForYou")
                     .font(.title2.weight(.semibold))
-                Text("选择声音来源。输出固定交给 BlackHole，再由豆包完成语音识别。")
+                Text("先设置音频路由，再注册你的声音。以后点击开始即可使用。")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -35,7 +36,8 @@ struct SettingsView: View {
                         Button("应用") { Task { await model.changeInput() } }
                             .disabled(
                                 model.selectedInput.isEmpty ||
-                                model.selectedInput == model.status?.inputDevice
+                                model.selectedInput == model.status?.inputDevice ||
+                                model.status?.inputDevice.isEmpty != false
                             )
                     }
 
@@ -48,10 +50,21 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
+                    if model.isBundled && !model.driverInstalled {
+                        HStack {
+                            Text("请从官方安装 BlackHole 2ch，重启后刷新设备。")
+                                .font(.caption)
+                            Button("安装指引") { model.openDriverGuide() }
+                            Button("刷新") { Task { await model.refreshDevices() } }
+                        }
+                    } else {
+                        Text("在豆包的输入设备中选择 BlackHole 2ch。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 .padding(8)
             }
-            .disabled(model.busy || isActive)
+            .disabled(model.isWorking || isActive)
 
             GroupBox("你的声音") {
                 HStack(spacing: 12) {
@@ -66,10 +79,38 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("重新注册…") { model.confirmEnrollment = true }
-                        .disabled(model.status?.ready != true || isActive || model.busy)
+                    Button(model.status?.ready == true ? "重新注册…" : "注册我的声音…") {
+                        model.confirmEnrollment = true
+                    }
+                    .disabled(isActive || model.isWorking || model.selectedInput.isEmpty ||
+                              (model.isBundled ? !model.driverInstalled : model.status?.ready != true))
                 }
                 .padding(8)
+            }
+
+            if let job = model.setupJob {
+                VStack(alignment: .leading, spacing: 8) {
+                    if model.setupRunning {
+                        ProgressView(value: job.progress)
+                        HStack {
+                            Text(job.stage).font(.caption)
+                            Spacer()
+                            Button("取消设置") { Task { await model.cancelSetup() } }
+                        }
+                    } else if job.status != "IDLE" {
+                        Text(job.stage).font(.caption)
+                            .foregroundStyle(job.status == "FAILED" ? .red : .secondary)
+                    }
+                }
+            }
+
+            HStack {
+                Text("声音提取模型由 Ke Zhang 开发，来自 REAL-TSE WeSep。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Link("项目", destination: URL(string: "https://github.com/REAL-TSE/wesep-real-tse")!)
+                if model.isBundled {
+                    Button("许可与致谢") { model.openLicenses() }
+                }
             }
 
             Label {
@@ -101,15 +142,19 @@ struct SettingsView: View {
             Spacer()
         }
         .padding(24)
-        .frame(width: 560, height: 440)
-        .task {
-            await model.refresh()
-            await model.refreshDevices()
         }
-        .alert("重新注册声音", isPresented: $model.confirmEnrollment) {
+        .frame(width: 620, height: 610)
+        .task {
+            await model.refreshDevices()
+            while !Task.isCancelled {
+                await model.refresh()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+        .alert("注册你的声音", isPresented: $model.confirmEnrollment) {
             Button("取消", role: .cancel) {}
             Button("开始 45 秒录音") {
-                Task { await model.perform("enroll") }
+                Task { await model.enrollVoice() }
             }
         } message: {
             Text("请使用当前日常麦克风，在安静环境自然朗读。检查通过后才会替换现有注册；失败不会覆盖旧版本。")

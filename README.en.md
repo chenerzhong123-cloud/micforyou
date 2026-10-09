@@ -8,7 +8,7 @@ English · [简体中文](README.md)
 
 Dictate a proposal at an open desk without giving every nearby conversation a place in your sentence. MicForYou uses your enrolled voice as a reference to process microphone audio locally on your Mac, reducing some nearby speech and environmental interference before sending it to Doubao IME for transcription.
 
-This **Experimental Alpha** is for Mac users comfortable with a hands-on setup. Distribution is planned through GitHub; there is no App Store version. **The app is a menu-bar controller: you still need a local Python runtime, model, voice enrollment, and BlackHole 2ch. Downloading the `.app` alone does not complete installation.**
+This **Experimental Alpha** is distributed through GitHub; there is no App Store version. The local complete 0.2.0 bundle includes the runtime and general model. First use still requires the audio route, microphone permission and personal voice registration.
 
 ## Watch the demo
 
@@ -22,36 +22,25 @@ This **Experimental Alpha** is for Mac users comfortable with a hands-on setup. 
 
 | Requirement / device | Current requirements and results |
 | --- | --- |
-| OS and architecture | The menu-bar UI requires **macOS 14+**. The current build targets **Apple Silicon (arm64)**; Intel is unverified. |
+| OS and architecture | The menu-bar UI requires **macOS 14+**. The complete bundle supports **Apple Silicon (arm64)** only; Intel is unsupported. |
 | MacBook Air M5 | Previously passed a [30-minute run](docs/MAC_A_NEXT_STAGE.md), with internal bridge audio latency p95 around **260 ms**. This is the validated baseline; workload and power conditions still affect results. |
 | MacBook Pro M1 (tested device) | The current REAL-TSE checkpoint's best valid RTF was **1.052**: processing was slower than real time and could not keep up with continuous audio input. Real-time filtering is currently unsupported on this tested device. |
 | Other Macs | Insufficient validation, including other generations and Pro / Max / Ultra variants. Devices with comparable or greater sustained processing capacity are candidates, but must still pass performance checks. |
+| Disk and memory | The unpacked app is about 1 GB. Reserve at least 3 GB for registration models and reports. Minimum RAM has not been established through independent device tests. |
 
-Complete the [local performance checks in installation step 5](docs/INSTALL.en.md) during installation. Recommended candidates need **RTF ≤ 0.80** (processing time / audio duration, leaving at least 20% throughput headroom), **internal bridge latency p95 < 400 ms** in paced verification, and no FAULT or sustained audio underruns. Use AC power and verify under your usual workload: heavy background work can turn a passing configuration into a failing one. See the [performance guide](docs/PERFORMANCE_GUIDE.md) and [M1 test results](docs/MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md).
+The complete app automatically checks local performance during voice registration. Recommended candidates need **RTF ≤ 0.80** (processing time / audio duration, leaving at least 20% throughput headroom), **internal bridge latency p95 < 400 ms** in paced verification, and no FAULT or audio underruns. Use AC power and verify under your usual workload: heavy background work can turn a passing configuration into a failing one. Source users can run [installation step 5](docs/INSTALL.en.md) manually. See the [performance guide](docs/PERFORMANCE_GUIDE.md) and [M1 test results](docs/MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md).
 
 **These latency figures measure MicForYou's audio path, excluding Doubao recognition and text display. They are not a promise of end-to-end dictation latency.** The earlier M5 validation is also not a hardware acceptance test for the new pause behavior.
 
-## Download and install
+## Download and installation
 
-Follow the [complete installation guide](docs/INSTALL.en.md), in this order:
+**A local complete 0.2.0 alpha has been built**, including arm64 Python, inference dependencies and the general REAL-TSE model. Users do not need to install Python, uv or Git, or manually download weights. It has not been publicly released: clean-device first-use testing, physical microphone/IME acceptance, final native distribution review and Developer ID/notarization remain pending. Identified LGPL/MPL sources and notices are supplied in the bundle. The old 0.1.1 ZIP is a controller-only package.
 
-1. Download the source and install `uv` and Apple Command Line Tools.
-2. Install BlackHole 2ch and restart your Mac. This is the audio-routing component required for voice input.
-3. Prepare the REAL-TSE source and independently obtained weights in a separate Python environment.
-4. Enroll your voice using your everyday microphone, export and validate a personalized ONNX model locally, and save the configuration.
-5. Build and install the menu-bar app in `~/Applications`, then select `BlackHole 2ch` as Doubao's input.
+Read the [complete-app installation guide](docs/BUNDLED_APP.en.md). Once a complete release is available, download its `.app.zip` and checksum from [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases) Assets, unpack and move it into Applications. Install BlackHole 2ch from its official distributor, then use Settings to select a microphone and register your voice. The app automatically exports, validates and benchmarks the model; setup must pass before filtering. Finally select `BlackHole 2ch` as Doubao's input device.
 
-Repository: [chenerzhong123-cloud/micforyou](https://github.com/chenerzhong123-cloud/micforyou). It is currently private, with **no published Release or public installer**. Repository access is required. Once you have access:
+The repository is currently private, so access requires permission. No public complete release asset is available. GitHub's `Source code (zip)` is source, not an app installer. Developers can still use the [source installation guide](docs/INSTALL.en.md).
 
-```bash
-git clone https://github.com/chenerzhong123-cloud/micforyou.git
-cd micforyou
-uv sync --extra dev
-```
-
-Alternatively, use **Code → Download ZIP** on GitHub and open the extracted source directory. This ZIP does not include Python environments, weights, or voice enrollment. Keep the source directory after installation: the app invokes the controller from the configured source location.
-
-When prebuilt packages are available, download `.app.zip` from **Assets** on [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases). The automatically generated `Source code (zip)` is not an app installer. A menu-bar package still requires runtime setup. Current builds are ad-hoc signed, without Developer ID signing or notarization. If macOS blocks first launch, follow [Apple's instructions](https://support.apple.com/en-us/102445) to use **System Settings → Privacy & Security → Open Anyway** for an app whose source you have verified.
+The model's licenses are scoped: Ke Zhang's own portions are authorized under Apache-2.0; WeSpeaker ECAPA parameters retain upstream CC BY 4.0 attribution. See [model notices](licenses/MODEL_NOTICES.md) and the [licensing review](docs/MODEL_DISTRIBUTION_AUDIT.md).
 
 ## Everyday use
 
@@ -83,7 +72,7 @@ MicForYou never changes the system's default input automatically. If Doubao lack
 
 - Filtering reduces some other speech but **cannot guarantee isolation**. Other people may still be transcribed while you are silent. This is not an identity-verification or privacy-isolation tool.
 - Raw passthrough on pause has automated and real-ONNX/synthetic-input checks. Physical-device transitions, Doubao experience, and a new 30-minute stability test remain pending. See the [validation record](docs/PAUSE_PASSTHROUGH_VALIDATION.md).
-- Model weights are not included in the source or menu-bar package. A unified redistribution license for the current REAL-TSE weights remains unclear; obtain them from upstream yourself and follow their conditions. See [model provenance and license notes](docs/STAGE_B.md#license-boundary).
+- Source control excludes weights and personal audio. Complete app bundles include the general checkpoint under scoped Apache-2.0 / CC BY 4.0 terms; see the [licensing review](docs/MODEL_DISTRIBUTION_AUDIT.md).
 
 ## Local data and faults
 
@@ -95,7 +84,9 @@ Configuration and runtime metadata live in `~/Library/Application Support/MicFor
 
 ## Update, troubleshoot, and uninstall
 
-Choose End and quit the interface before updating the source/controller:
+Complete-bundle updates: choose End and quit the interface, download the new complete ZIP, replace the app, and reopen it. Voice data and settings in Application Support are preserved. Confirm readiness before starting filtering again.
+
+Source-install users can update with the following commands. These build the controller shell, not the complete runtime bundle:
 
 ```bash
 git pull --ff-only
@@ -105,9 +96,9 @@ uv sync --extra dev
 
 This preserves configuration, models, and enrollment. Older versions released capture on pause. Upgrading does not automatically reopen the microphone; explicitly start filtering again. Do not replace runtime files while raw output is active.
 
-- Setup incomplete: run `uv run micforyou status` and check missing paths/device names.
+- Setup incomplete: check the driver, microphone and registration progress in Settings. Source users can also run `uv run micforyou status`.
 - No text: check readiness, Doubao's `BlackHole 2ch` selection, and macOS microphone permission for the process actually capturing audio.
 - Microphone still active: pause and quitting the interface preserve audio. Choose End or run `uv run micforyou stop`.
 - Uninstall: end audio, quit, move `~/Applications/MicForYou.app` to Trash, and restore Doubao's input. Configuration, enrollment, and BlackHole are separate resources; back up or remove them as needed.
 
-[Installation](docs/INSTALL.en.md) · [Menu-bar guide](docs/MENU_BAR_APP.md) · [Performance checks](docs/PERFORMANCE_GUIDE.md) · [Development history](docs/DEVELOPMENT_HISTORY.md) · [Video source](video/README.md)
+[Complete-bundle installation](docs/BUNDLED_APP.en.md) · [Source installation](docs/INSTALL.en.md) · [Menu-bar guide](docs/MENU_BAR_APP.md) · [Performance checks](docs/PERFORMANCE_GUIDE.md) · [Development history](docs/DEVELOPMENT_HISTORY.md) · [Video source](video/README.md)

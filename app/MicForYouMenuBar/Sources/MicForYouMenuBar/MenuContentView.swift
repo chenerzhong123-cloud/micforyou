@@ -70,7 +70,7 @@ struct MenuContentView: View {
             }
 
             Spacer()
-            if model.busy {
+            if model.isWorking {
                 ProgressView().controlSize(.small)
             } else {
                 Text("Alpha")
@@ -160,7 +160,7 @@ struct MenuContentView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(model.busy)
+            .disabled(model.isWorking)
         } else {
             Button {
                 Task { await model.perform(command) }
@@ -170,7 +170,7 @@ struct MenuContentView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
-            .disabled(model.busy)
+            .disabled(model.isWorking)
         }
     }
 

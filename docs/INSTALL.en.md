@@ -1,5 +1,6 @@
 # Install MicForYou from GitHub
 
+> For the complete local 0.2.0 alpha, use [the bundled-app guide](BUNDLED_APP.en.md). This page covers the developer/source installation path.
 English · [简体中文](INSTALL.md) · [Back to README](../README.en.md)
 
 This release requires Terminal and local model setup. It is intended for users familiar with Python/Git. All paths below belong to your own machine. The menu-bar UI requires macOS 14+; the model has been tested on M5 and fails the measured real-time gate on M1. Neither the source nor the app shell includes weights.
@@ -66,7 +67,7 @@ test -f "$MFY_MODEL/avg_model.pt"
 test -f "$MFY_MODEL/config.yaml"
 ```
 
-A unified weight-redistribution license remains unclear, so MicForYou does not package or automatically download them. If upstream access is unavailable, model setup cannot continue; the app shell cannot replace it. See [model provenance and checksum](STAGE_B.md#license-boundary).
+The 2026-10-09 author reply grants Apache-2.0 for his own code and trained parameters, excluding WeSpeaker pretrained ECAPA parameters. The latter retain upstream CC BY 4.0 attribution. Complete app bundles can include the general checkpoint under these scoped terms; see the [licensing review](MODEL_DISTRIBUTION_AUDIT.md) and [notices](../licenses/MODEL_NOTICES.md).
 
 ## 4. Enroll, export, and validate
 

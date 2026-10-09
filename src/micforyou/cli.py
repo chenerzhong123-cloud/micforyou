@@ -255,6 +255,11 @@ def command_configure(args: argparse.Namespace) -> None:
 
 
 def require_inactive(config_path: Path) -> None:
+    from .setup import setup_status
+    import os
+    job = setup_status(config_path)
+    if job.get("status") == "RUNNING" and job.get("pid") != os.getpid():
+        raise ValueError("声音设置正在进行，请等待完成或取消")
     runtime = _runtime_status(config_path)
     if runtime.get("pid") is not None or runtime.get("status") in {"STARTING", "RUNNING", "STOPPING"}:
         raise ValueError("end MicForYou before changing its configuration; paused filtering still captures audio")
@@ -295,6 +300,12 @@ def command_set_policy(args: argparse.Namespace) -> None:
 
 
 def command_status(args: argparse.Namespace) -> None:
+    if not args.config.exists():
+        write_json({"ready": False, "input_device": "", "output_device": BLACKHOLE_NAME,
+                    "fault_policy": "silence", "device_errors": [],
+                    "runtime": runtime_status(args.config),
+                    "quality_notice": "请完成首次声音设置", "configured": False}, args.output)
+        return
     config = load_config(args.config)
     write_json(
         {
@@ -337,6 +348,9 @@ def start_background(config: ProductConfig, args: argparse.Namespace) -> dict:
 
 
 def command_start(args: argparse.Namespace) -> None:
+    from .setup import setup_status
+    if setup_status(args.config)["status"] == "RUNNING":
+        raise ValueError("声音设置正在进行，请等待完成或取消")
     config = load_config(args.config)
     write_json(start_background(config, args), None)
 
@@ -623,6 +637,22 @@ def build_parser() -> argparse.ArgumentParser:
     stop.add_argument("--config", type=Path, default=default_config_path())
     stop.add_argument("--timeout", type=float, default=15.0)
     stop.set_defaults(func=command_stop)
+
+    from .setup import start_setup, setup_status, cancel_setup, run_worker
+    for name, handler in (("setup-start", start_setup), ("setup-status", setup_status),
+                          ("setup-cancel", cancel_setup)):
+        action = subparsers.add_parser(name)
+        action.add_argument("--config", type=Path, default=default_config_path())
+        if name == "setup-start":
+            action.add_argument("--input-device", required=True)
+            action.set_defaults(func=lambda a: write_json(start_setup(a.config, a.input_device), None))
+        else:
+            action.set_defaults(func=lambda a, f=handler: write_json(f(a.config), None))
+    worker = subparsers.add_parser("setup-worker")
+    worker.add_argument("--config", type=Path, default=default_config_path())
+    worker.add_argument("--input-device", required=True)
+    worker.add_argument("--token", required=True)
+    worker.set_defaults(func=lambda a: run_worker(a.config, a.input_device, a.token))
 
     enroll = subparsers.add_parser(
         "enroll", help="record and validate a replacement enrollment"

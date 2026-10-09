@@ -1,6 +1,6 @@
 # GitHub 发布准备
 
-当前建议：通过 GitHub 提供源码与菜单栏 App 外壳，模型由用户自行准备。当前仓库仍为 private，尚无 Release。提交与推送源码、文档和宣传片不会改变仓库可见性，也不会自动创建 Release 或发布安装包。
+当前已构建 0.2.0 本地完整 Alpha，内置 Python、推理依赖和通用模型；首次使用由 App 引导声音注册。当前仓库仍为 private，尚无已发布完整 Release。完整包作为 `v0.2.0-local-alpha` Draft Release 提供维护者验收，未完成下列发布条件。提交与推送源码、文档不会改变仓库可见性或自动公开安装包。
 
 ## 本地交付
 
@@ -8,15 +8,32 @@
 ./app/MicForYouMenuBar/package_release.sh
 ```
 
-产物位于 `outputs/releases/`，包含本机架构的 `.app.zip` 与 `.sha256`。ZIP 只有 App 和双语 `INSTALL.txt`，不包含 Python 环境、权重、声音注册或运行报告。菜单栏 App 的实际版本为 0.1.1，发布标签可采用 `v0.1.1-alpha`。此包为 ad-hoc 签名、未公证。
+产物位于 `outputs/releases/`，包含本机架构的 `.app.zip` 与 `.sha256`。ZIP 只有 App 和双语 `INSTALL.txt`，不包含 Python 环境、权重、声音注册或运行报告。该命令只生成控制器外壳；历史 0.1.1 包同样只有控制器。此包为 ad-hoc 签名、未公证。
+
+完整包构建使用独立 CPython 3.12（可由 `uv python install 3.12 --install-dir outputs/bundle-build/python` 准备），安装 `requirements-bundle.lock` 后执行：
+
+```bash
+uv pip install --target outputs/bundle-build/cmake cmake==4.4.4
+PYTHON_ROOT/bin/python3.12 -B tools/bundle/prepare_native.py \
+  --sources outputs/bundle-build/sources \
+  --cmake outputs/bundle-build/cmake/cmake/data/bin/cmake \
+  --output outputs/bundle-build/native
+./app/MicForYouMenuBar/package_complete.sh PYTHON_ROOT REAL_TSE_REPO WESPEAKER_PACKAGE
+```
+
+固定源码版本与原始 checkpoint hash 会在构建时检查。完整包内置通用模型、离线推理源码、Python、许可与版本清单；不包含个人声音和个性化模型。普通 venv 不能作为 PYTHON_ROOT。安装依赖时仅对专用构建 Python 使用 `uv pip install --break-system-packages --python ... -r requirements-bundle.lock`，不得修改系统 Python。
+
+当前包仅供本地 Alpha 验收，公共发布条件见下文。用户指南：[中文](BUNDLED_APP.md) / [English](BUNDLED_APP.en.md)。
 
 最新宣传片和预览图已加入 `docs/media/`，中英文 README 使用仓库内相对链接；随源码推送后即可由有仓库访问权限的用户下载。它们不依赖开发机 localhost。
 
 ## 发布前需完成的事项
 
+完整 App 的模型授权结论与实施方案见 [模型许可与完整 App 分发核查](MODEL_DISTRIBUTION_AUDIT.md)。已取得作者自有部分 Apache-2.0 授权，第三方 ECAPA 按官方 CC BY 4.0 保留署名。本地完整包已生成；历史外壳 ZIP 不能标为完整包。
+
 1. 完成本次新增行为的真实麦克风、豆包、断链与 30 分钟混合运行验收，结果写入 `PAUSE_PASSTHROUGH_VALIDATION.md`。保留模型质量边界。
 2. 确认目标受众：private 仓库仅向已有访问权限的人分发；面向所有用户时，由仓库所有者决定可见性或单独分发仓库，并调整双语 README 的下载状态。
-3. 明确本项目代码与品牌资源的分发许可；当前仓库没有项目 LICENSE。模型的来源与条件单独处理，不随 App 重新打包。
+3. 明确本项目代码与品牌资源的分发许可；当前仓库没有项目 LICENSE。通用模型随完整 App 内置，各部分来源与许可分别保留。已识别 LGPL／MPL 组件源码随包交付，全部实际原生库仍需最终分发复核。
 4. 面向普通用户分发前，推荐配置 Developer ID 签名与 Apple 公证，以减少首次打开阻拦。当前极客测试包仍明确说明 ad-hoc 状态。
 5. 提交经审查的源码、双语说明和视频，创建 Experimental Alpha prerelease，上传本机构建 ZIP、checksum、宣传片；只声明已验证的架构。README 的 Release 链接使用发布后的真实资产。
 

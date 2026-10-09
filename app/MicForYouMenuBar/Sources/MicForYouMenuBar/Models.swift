@@ -91,6 +91,12 @@ struct AudioDevice: Codable, Identifiable, Hashable {
     var id: String { "\(index):\(name)" }
 }
 
+struct SetupJob: Decodable {
+    let status: String
+    let stage: String
+    let progress: Double
+}
+
 enum StatusAppearance: Equatable {
     case neutral, good, warning, danger
 

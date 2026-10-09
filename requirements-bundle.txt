@@ -1,0 +1,11 @@
+# Minimal offline inference + enrollment/export environment; no ASR/training stack.
+numpy==1.26.4
+scipy==1.15.3
+sounddevice==0.5.6
+soundfile==0.12.1
+soxr==0.5.0.post1
+torch==2.7.1
+torchaudio==2.7.1
+onnx==1.22.0
+onnxruntime==1.30.0
+PyYAML==6.0.2

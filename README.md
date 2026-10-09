@@ -8,7 +8,7 @@
 
 在开放工位里口述方案，身旁的交谈不必都挤进你的句子。MicForYou 以你的注册声音为参考，在 Mac 本机处理麦克风音频，减少部分附近人声和环境干扰，再交给你熟悉的豆包输入法识别文字。
 
-这是面向愿意动手配置的 Mac 用户的 **Experimental Alpha**。计划通过 GitHub 分发，当前没有 App Store 版本。**当前应用是菜单栏控制器，仍需要本地 Python 运行环境、模型、声音注册和 BlackHole 2ch；下载 `.app` 并不等于完成全部安装。**
+当前是 **Experimental Alpha**，通过 GitHub 分发，暂无 App Store 版本。0.2.0 本地完整包内置运行环境与通用模型；首次使用仍需安装音频路由组件、授权麦克风并注册自己的声音。
 
 ## 看看它如何工作
 
@@ -22,36 +22,25 @@
 
 | 项目 / 设备 | 当前要求与验证结果 |
 | --- | --- |
-| 系统与架构 | 菜单栏界面要求 **macOS 14+**；当前构建为 **Apple Silicon（arm64）**，Intel 未验证。 |
+| 系统与架构 | 菜单栏界面要求 **macOS 14+**；完整包仅支持 **Apple Silicon（arm64）**，不支持 Intel。 |
 | MacBook Air M5 | 此前通过 [30 分钟运行验证](docs/MAC_A_NEXT_STAGE.md)，bridge 内部音频延迟 p95 约 **260 ms**。这是当前已验证基线，实际表现仍受负载和电源状态影响。 |
 | MacBook Pro M1（已测试设备） | 当前 REAL-TSE checkpoint 的最佳有效 RTF 为 **1.052**，处理速度低于实时要求，不能持续跟上音频输入。当前不支持该设备上的实时过滤。 |
 | 其他 Mac | 尚无足够验证，包括其他代际和 Pro / Max / Ultra 型号。具备相当或更强持续处理能力的设备可以作为候选，但不能跳过性能检查。 |
+| 磁盘与内存 | 解压后 App 约 1 GB，建议预留至少 3 GB 可用空间用于注册模型和报告。最低内存要求尚未通过独立设备测试确定。 |
 
-安装时须完成 [安装指南第 5 节的本机性能检查](docs/INSTALL.md)：推荐候选的 **RTF ≤ 0.80**（处理耗时 / 音频时长，保留至少 20% 吞吐余量），配速复核的 **bridge 内部延迟 p95 < 400 ms**，且无 FAULT 或持续音频欠载（underrun）。建议接通电源，并在日常工作负载下复核；后台重负载可能让同一台机器从达标变为不达标。详见 [性能指南](docs/PERFORMANCE_GUIDE.md) 和 [M1 测试记录](docs/MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md)。
+完整 App 在声音注册时自动进行本机性能检查：推荐候选的 **RTF ≤ 0.80**（处理耗时 / 音频时长，保留至少 20% 吞吐余量），配速复核的 **bridge 内部延迟 p95 < 400 ms**，且无 FAULT 或音频欠载（underrun）。建议接通电源，并在日常工作负载下复核；后台重负载可能让同一台机器从达标变为不达标。源码用户可按 [安装指南第 5 节](docs/INSTALL.md) 手动验证。详见 [性能指南](docs/PERFORMANCE_GUIDE.md) 和 [M1 测试记录](docs/MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md)。
 
 **上述延迟是 MicForYou 音频链路的指标，不包含豆包识别及文字显示耗时，不能视为完整语音输入的延迟承诺。** M5 的此前验证也不等于新版暂停功能的真机验收。
 
 ## 下载与安装
 
-推荐先阅读 [完整安装指南](docs/INSTALL.md)，按顺序完成：
+**0.2.0 本地完整 Alpha 已构建**，内置 arm64 Python、推理依赖和通用 REAL-TSE 权重，用户无需安装 Python、uv、Git 或手动下载模型。当前尚未公开发布：新设备首次设置、真实麦克风／输入法验收、原生依赖最终分发复核及 Developer ID／公证仍待完成。已识别的 LGPL／MPL 源码和声明随包附带。旧 0.1.1 ZIP 仍然只是菜单栏控制器。
 
-1. 下载仓库源码，安装 `uv` 和 Apple Command Line Tools。
-2. 安装 BlackHole 2ch 并重启 Mac。它是语音输入需要的音频路由组件。
-3. 在独立 Python 环境中准备 REAL-TSE 源码与用户自行取得的权重。
-4. 用日常麦克风注册自己的声音，在本地导出并校验个性化 ONNX，完成配置。
-5. 构建菜单栏 App，安装到 `~/Applications`，将豆包输入设备选为 `BlackHole 2ch`。
+请阅读 [完整 App 安装指南](docs/BUNDLED_APP.md)。完整版本对外发布后，从 [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases) 的 Assets 下载 `.app.zip` 和 checksum，解压并放入 Applications。从官方安装 BlackHole 2ch 后，在设置中选择麦克风、注册自己的声音；App 会自动导出、校验和检查性能，通过后才允许过滤。最后将豆包输入设备选为 `BlackHole 2ch`。
 
-仓库地址：[chenerzhong123-cloud/micforyou](https://github.com/chenerzhong123-cloud/micforyou)。目前仓库仍为私有，**尚无已发布 Release 或公开下载包**；访问者需要仓库权限。拿到访问权限后可以：
+目前仓库仍为私有，访问需要权限，暂无公开完整 Release 资产。GitHub 的 `Source code (zip)` 是源码，不是 App 安装包。开发者仍可使用 [源码安装指南](docs/INSTALL.md)。
 
-```bash
-git clone https://github.com/chenerzhong123-cloud/micforyou.git
-cd micforyou
-uv sync --extra dev
-```
-
-也可以在 GitHub 的 **Code → Download ZIP** 下载源码，解压后进入目录。源码 ZIP 不包含 Python 环境、权重和声音注册。源码目录安装后要保留，App 会从配置记录的该目录调用控制程序。
-
-未来提供预构建包时，请从 [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases) 的 **Assets** 下载 `.app.zip`，不要将 GitHub 自动生成的 `Source code (zip)` 当成安装包。菜单栏包仍需先完成运行环境设置。当前构建为 ad-hoc 签名，未做 Developer ID 签名与公证；首次打开被拦截时，按 [Apple 的说明](https://support.apple.com/en-us/102445)，在“系统设置 → 隐私与安全性”中对确认来源的应用选择“仍要打开”。
+模型分开遵循各自的许可：Ke Zhang 自有部分获 Apache-2.0 授权，WeSpeaker ECAPA 预训练参数按上游 CC BY 4.0 保留署名。见 [模型声明](licenses/MODEL_NOTICES.md) 和 [许可核查](docs/MODEL_DISTRIBUTION_AUDIT.md)。
 
 ## 日常使用
 
@@ -83,7 +72,7 @@ MicForYou 不自动修改系统默认输入。如果豆包没有独立输入设�
 
 - 可减少部分他人声，**不能保证完全隔离**。本人不说话时，其他人的声音仍可能被识别。它不是身份验证或隐私隔离工具。
 - 暂停原音直通已有自动检查和真实 ONNX + 合成输入验证；真实设备切换、豆包体验与新版 30 分钟稳定性验收仍待完成。详见 [本次验证记录](docs/PAUSE_PASSTHROUGH_VALIDATION.md)。
-- 模型权重不会随源码或菜单栏安装包分发。现有 REAL-TSE 权重的统一分发许可尚不明确，用户需自行从上游取得并遵循其条件；参见 [模型来源与许可记录](docs/STAGE_B.md#license-boundary)。
+- 源码仓库不提交权重或个人录音；完整 App 可按分开的 Apache-2.0 / CC BY 4.0 条款内置通用权重。详见 [许可核查](docs/MODEL_DISTRIBUTION_AUDIT.md)。
 
 ## 本机数据与异常行为
 
@@ -95,7 +84,9 @@ MicForYou 的声音前处理与注册在本机进行；它不实现 ASR，也不
 
 ## 更新、排查与卸载
 
-更新前先点击“结束”，退出菜单栏界面，再更新源码及控制环境：
+完整包更新：先点击“结束”并退出界面，下载新版完整 ZIP 后替换 App，再打开。Application Support 中的声音和设置会保留；更新后先确认就绪，再开始过滤。
+
+源码安装用户再按以下命令更新。此命令生成控制器外壳，不生成完整运行包：
 
 ```bash
 git pull --ff-only
@@ -105,9 +96,9 @@ uv sync --extra dev
 
 配置、模型和注册不会因此被删除。旧版本“暂停”实际上已停止收音；升级后不会自动打开麦克风，需重新点击“开始过滤”。不要在原音输出期间热替换运行文件。
 
-- “需要完成设置”：运行 `uv run micforyou status`，检查缺失路径和设备名。
+- “需要完成设置”：在“设置”中检查驱动、麦克风和声音注册进度；源码用户也可运行 `uv run micforyou status`。
 - “没有文字”：确认状态已就绪，豆包选中 `BlackHole 2ch`，并检查 macOS 对实际录音进程的麦克风授权。
 - “麦克风还在使用”：暂停和退出界面都会保留音频，请先“结束”；也可运行 `uv run micforyou stop`。
 - 卸载：先结束、退出，把 `~/Applications/MicForYou.app` 移入废纸篓，恢复豆包输入设备。配置、声音注册和 BlackHole 是单独的资源，按需备份和移除。
 
-[完整安装](docs/INSTALL.md) · [菜单栏操作](docs/MENU_BAR_APP.md) · [性能检查](docs/PERFORMANCE_GUIDE.md) · [研发记录](docs/DEVELOPMENT_HISTORY.md) · [视频源码](video/README.md)
+[完整包安装](docs/BUNDLED_APP.md) · [源码安装](docs/INSTALL.md) · [菜单栏操作](docs/MENU_BAR_APP.md) · [性能检查](docs/PERFORMANCE_GUIDE.md) · [研发记录](docs/DEVELOPMENT_HISTORY.md) · [视频源码](video/README.md)

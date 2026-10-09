@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
 from pathlib import Path
+import os
 
 
 CONFIG_SCHEMA = "micforyou/product-config/1"
@@ -34,6 +35,7 @@ class ProductConfig:
     auto_recoveries: int = 2
     recovery_window_seconds: float = 300.0
     route_reconnect_timeout_seconds: float = 120.0
+    bundle_managed: bool = False
 
     def validate(self) -> None:
         if self.fault_policy not in {"silence", "passthrough"}:
@@ -102,7 +104,14 @@ def save_config(config: ProductConfig, destination: Path) -> None:
 def load_config(source: Path) -> ProductConfig:
     if not source.exists():
         raise ValueError(f"configuration not found: {source}; run configure first")
-    return ProductConfig.from_dict(json.loads(source.read_text(encoding="utf-8")))
+    config = ProductConfig.from_dict(json.loads(source.read_text(encoding="utf-8")))
+    root = os.environ.get("MICFORYOU_BUNDLE_ROOT")
+    if config.bundle_managed and root:
+        root = Path(root)
+        config = replace(config, project_root=root, model_repo=root / "vendor",
+                         model_dir=root / "models" / "tfmap_context_causal_100",
+                         runtime_python=root / "python" / "bin" / "python3.12")
+    return config
 
 
 def required_paths(config: ProductConfig) -> dict[str, Path]:
