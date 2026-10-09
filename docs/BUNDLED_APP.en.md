@@ -47,6 +47,9 @@ Personal recordings, models, reports and settings remain in
 Moving/upgrading the app rebinds bundled resources while preserving personal data.
 Failed candidate registrations are cleaned up; older successful registrations
 remain available for rollback and can occupy additional disk space.
+Upgrading from the 0.1.1 controller requires one new registration in the complete
+app. Existing audio, models and settings are preserved until that passes. The
+complete app does not launch the developer runtime referenced by legacy settings.
 
 Ke Zhang's own inference code and trained parameters are authorized under
 Apache-2.0. Third-party WeSpeaker ECAPA parameters retain upstream CC BY 4.0

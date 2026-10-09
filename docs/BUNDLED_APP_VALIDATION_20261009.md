@@ -9,7 +9,7 @@
 
 | 检查 | 结果与范围 |
 | --- | --- |
-| 控制器自动测试 | 96 passed；分别在开发环境和独立 CPython 3.12.13／NumPy 1.26.4 环境运行，覆盖取消、失败不覆盖旧注册、全部延迟候选失败及自动增加 prefill 重试 |
+| 控制器自动测试 | 98 passed；分别在开发环境和独立 CPython 3.12.13／NumPy 1.26.4 环境运行，覆盖取消、失败不覆盖旧注册、全部延迟候选失败、自动增加 prefill 重试及旧控制器升级门槛 |
 | Swift | release build、ModelCheck、BundleCheck、StandaloneCheck 通过；C01 正式图标 16–1024 px 可解码 |
 | 首次启动／迁移 | App 移至带空格目录，以 Swift Process 调用实际内置 Python，在全新配置路径取得 STOPPED／未配置及 IDLE；无需项目 venv |
 | 原始模型 | 严格加载通用 checkpoint；SHA-256 与作者确认对象一致，未替换神经网络实现 |

@@ -85,6 +85,7 @@ Configuration and runtime metadata live in `~/Library/Application Support/MicFor
 ## Update, troubleshoot, and uninstall
 
 Complete-bundle updates: choose End and quit the interface, download the new complete ZIP, replace the app, and reopen it. Voice data and settings in Application Support are preserved. Confirm readiness before starting filtering again.
+Upgrading from the 0.1.1 controller requires one new registration; settings are replaced only after it passes.
 
 Source-install users can update with the following commands. These build the controller shell, not the complete runtime bundle:
 

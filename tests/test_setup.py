@@ -51,6 +51,32 @@ def test_new_user_status_does_not_require_config_or_audio_device(tmp_path, capsy
     assert value["runtime"]["status"] == "STOPPED"
 
 
+@pytest.mark.parametrize("command", ["status", "start"])
+def test_complete_app_requires_setup_instead_of_starting_old_developer_environment(
+        tmp_path, monkeypatch, capsys, command):
+    from micforyou import cli
+    config = tmp_path / "config.json"
+    legacy = ProductConfig(input_device="Mic", model_repo=tmp_path / "old/vendor",
+        model_dir=tmp_path / "old/models", enrollment=tmp_path / "old/voice.wav",
+        onnx_model=tmp_path / "old/core.onnx", runtime_python=tmp_path / "old/venv/python",
+        project_root=tmp_path / "old")
+    save_config(legacy, config)
+    original = config.read_bytes()
+    monkeypatch.setenv("MICFORYOU_BUNDLE_ROOT", str(tmp_path / "complete/Runtime"))
+    monkeypatch.setattr(cli, "product_status", lambda *a: pytest.fail("developer resources queried"))
+    monkeypatch.setattr(cli, "start_background", lambda *a: pytest.fail("developer runtime started"))
+    args = build_parser().parse_args([command, "--config", str(config)])
+    if command == "status":
+        cli.command_status(args)
+        status = json.loads(capsys.readouterr().out)
+        assert not status["ready"] and status["needs_bundle_setup"]
+        assert status["input_device"] == "Mic"
+    else:
+        with pytest.raises(ValueError, match="重新注册"):
+            cli.command_start(args)
+    assert config.read_bytes() == original
+
+
 def test_moved_bundle_rebinds_resources_but_retains_personal_data(tmp_path, monkeypatch):
     original = ProductConfig(
         input_device="Mic", model_repo=tmp_path / "old/vendor",

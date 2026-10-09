@@ -4,6 +4,7 @@ import argparse
 from dataclasses import replace
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -307,6 +308,13 @@ def command_status(args: argparse.Namespace) -> None:
                     "quality_notice": "请完成首次声音设置", "configured": False}, args.output)
         return
     config = load_config(args.config)
+    if os.environ.get("MICFORYOU_BUNDLE_ROOT") and not config.bundle_managed:
+        write_json({"ready": False, "input_device": config.input_device,
+                    "output_device": BLACKHOLE_NAME, "fault_policy": config.fault_policy,
+                    "device_errors": [], "runtime": runtime_status(args.config),
+                    "quality_notice": "升级到完整 App 后，请重新注册声音；旧录音和模型会保留",
+                    "configured": True, "needs_bundle_setup": True}, args.output)
+        return
     write_json(
         {
             **product_status(config),
@@ -352,6 +360,8 @@ def command_start(args: argparse.Namespace) -> None:
     if setup_status(args.config)["status"] == "RUNNING":
         raise ValueError("声音设置正在进行，请等待完成或取消")
     config = load_config(args.config)
+    if os.environ.get("MICFORYOU_BUNDLE_ROOT") and not config.bundle_managed:
+        raise ValueError("请先在完整 App 中重新注册声音；不会启动旧开发环境")
     write_json(start_background(config, args), None)
 
 

@@ -43,6 +43,8 @@ GitHub Releases 暂无经过完整验收的 0.2.0 资产。0.1.1 的菜单栏 ZI
 `~/Library/Application Support/MicForYou`，不上传到云端。
 App 移动或更新后会重新定位内部资源，保留个人数据。失败的候选注册会清理；
 成功的旧注册保留在 registrations 中，便于回退，可能占用额外空间。
+从 0.1.1 控制器升级时需在完整 App 中重新注册一次。旧录音、模型和配置保留，
+新注册通过后才切换；完整 App 不会启动旧配置引用的开发环境。
 
 模型不是统一的单一许可：Ke Zhang 自有源码和训练参数获 Apache-2.0
 书面授权；WeSpeaker ECAPA 预训练参数按上游 CC BY 4.0 保留署名。
