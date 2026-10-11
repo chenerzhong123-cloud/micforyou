@@ -39,4 +39,15 @@ def test_real_python_plan_swift_ui_executor(tmp_path, monkeypatch):
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("protocol PASS") == 3
-    assert "native failure/retry/summary PASS" in result.stdout
+    assert "native failure/retry/summary/driver-readback PASS" in result.stdout
+
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="micforyou-uninstall-") as private_work:
+        directory = Path(private_work)
+        directory.chmod(0o700)
+        copy = directory / "executor"
+        shutil.copy2(executable, copy)
+        (directory / "plan.json").write_text("fixture")
+        result = subprocess.run([str(copy), "--cleanup-check"], capture_output=True, text=True, timeout=10)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert not directory.exists()

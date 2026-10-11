@@ -143,7 +143,18 @@ func releaseLease(_ path: String, home: URL) throws {
         }
     }
 }
-func verifyWorkDirectory(_ work: URL) throws {
+func awaitParentExit(_ parent: Int32, deadline: Date,
+                     canceled: () -> Bool,
+                     alive: (Int32) -> Bool = { kill($0, 0) == 0 },
+                     sleep: () -> Void = { Thread.sleep(forTimeInterval: 0.1) }) throws {
+    while alive(parent) {
+        try require(Date() < deadline && !canceled(), "主 App 尚未退出或接管取消，未删除数据")
+        sleep()
+    }
+    try require(!canceled(), "接管取消，未删除数据")
+}
+func verifyWorkDirectory(_ work: URL,
+                         executor: URL = URL(filePath: CommandLine.arguments[0])) throws {
     try verifyNoLinks(work)
     let tmp = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
     let canonical = work.resolvingSymlinksInPath()
@@ -153,8 +164,12 @@ func verifyWorkDirectory(_ work: URL) throws {
     let attrs = try FileManager.default.attributesOfItem(atPath: work.path)
     try require((attrs[.ownerAccountID] as? NSNumber)?.uint32Value == getuid() &&
                 (attrs[.posixPermissions] as? NSNumber)?.intValue == 0o700, "临时目录权限或所有者不匹配")
-    try require(URL(filePath: CommandLine.arguments[0]).resolvingSymlinksInPath() == canonical.appending(path: "executor"),
+    try require(executor.resolvingSymlinksInPath() == canonical.appending(path: "executor"),
                 "执行器不在自有目录内")
+}
+func removeWorkDirectory(_ work: URL) throws {
+    try verifyWorkDirectory(work)
+    try FileManager.default.removeItem(at: work)
 }
 func shellQuote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 func receiptExists(_ name: String) -> Bool {
@@ -240,6 +255,13 @@ struct CleanupResult: Codable {
     let path: String
     let status: String
     let detail: String?
+}
+func driverReadback(driverExisted: Bool, driverRemaining: Bool,
+                    receiptExisted: Bool, receiptRemaining: Bool) -> [CleanupResult] {
+    [(driverPath, driverExisted, driverRemaining), (driverReceipt, receiptExisted, receiptRemaining)].map {
+        CleanupResult(path: $0.0, status: $0.2 ? "failed" : ($0.1 ? "removed" : "absent"),
+                      detail: $0.2 ? "驱动清理后目标仍存在；App 与个人数据尚未删除" : nil)
+    }
 }
 func cleanTargets(_ plan: PlanBody, home: URL,
                   trash: (URL) throws -> Void = { url in
@@ -335,8 +357,11 @@ func runSelfCheck() throws {
             try verifyNoLinks(URL(filePath: final))
             work = directory
             let plan = try JSONDecoder().decode(PlanBody.self, from: Data(contentsOf: URL(filePath: initial)))
+            let appReceiptWasPresent = receiptExists(appReceipt)
+            let driverWasPresent = exists(driverPath)
+            let driverReceiptWasPresent = plan.removeDriver && receiptExists(driverReceipt)
             try prepareExecution(plan, home: home, authorize: {
-                if plan.removeDriver || plan.appReceiptInstalled || receiptExists(appReceipt) {
+                if plan.removeDriver || plan.appReceiptInstalled || appReceiptWasPresent {
                     session = try PrivilegeSession(work: directory, plan: plan)
                     try session?.awaitFile("privilege-ready")
                 }
@@ -360,10 +385,8 @@ func runSelfCheck() throws {
             try verifyMarker(payload.markerPath, home: home)
             lease = payload.markerPath
             retainedItems = payload.plan.keep
-            while kill(parent, 0) == 0 {
-                try require(Date() < deadline && !exists(directory.appending(path: "abort").path), "主 App 尚未退出，未删除数据")
-                Thread.sleep(forTimeInterval: 0.1)
-            }
+            try awaitParentExit(parent, deadline: deadline,
+                                canceled: { exists(directory.appending(path: "abort").path) })
             try verifyPlan(payload.plan, home: home)
             try withCoordinator(home: home) {
                 let owner = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(filePath: payload.markerPath))) as? [String: Any]
@@ -373,11 +396,20 @@ func runSelfCheck() throws {
             var results: [CleanupResult] = []
             if let session {
                 try Data().write(to: directory.appending(path: "driver-commit"))
-                try session.awaitFile("driver-done")
+                var phaseError: Error?
+                do { try session.awaitFile("driver-done") } catch { phaseError = error }
+                // Always read back the body and receipt, including a nonzero
+                // helper exit. That exit may follow a successful rm and a
+                // failed receipt command; report the actual partial outcome.
                 if plan.removeDriver {
-                    try require(!exists(driverPath) && !receiptExists(driverReceipt), "驱动或驱动安装记录仍存在；保留 App 与个人数据")
-                    results.append(CleanupResult(path: driverPath, status: "removed", detail: nil))
+                    results += driverReadback(driverExisted: driverWasPresent,
+                                              driverRemaining: exists(driverPath),
+                                              receiptExisted: driverReceiptWasPresent,
+                                              receiptRemaining: receiptExists(driverReceipt))
                 }
+                outcome = results
+                if let phaseError { throw phaseError }
+                try require(!results.contains { $0.status == "failed" }, "驱动阶段未完成；保留 App 与个人数据")
             }
             results += cleanTargets(payload.plan, home: home)
             if let session, !results.contains(where: { result in
@@ -386,18 +418,19 @@ func runSelfCheck() throws {
                 })
             }) {
                 try Data().write(to: directory.appending(path: "receipt-commit"))
-                do {
-                    try session.awaitFile("privilege-done")
-                    try require(!receiptExists(appReceipt), "App 安装记录仍存在")
-                    results.append(CleanupResult(path: appReceipt, status: "removed", detail: nil))
-                } catch { results.append(CleanupResult(path: appReceipt, status: "failed", detail: String(describing: error))) }
+                var receiptError: Error?
+                do { try session.awaitFile("privilege-done") } catch { receiptError = error }
+                let remaining = receiptExists(appReceipt)
+                results.append(CleanupResult(path: appReceipt,
+                                             status: remaining ? "failed" : (appReceiptWasPresent ? "removed" : "absent"),
+                                             detail: remaining ? (receiptError.map(String.init(describing:)) ?? "App 安装记录仍存在") : nil))
             }
             outcome = results
             try releaseLease(payload.markerPath, home: home)
             lease = nil
             let success = !results.contains { $0.status == "failed" }
             session?.abort()
-            try FileManager.default.removeItem(at: directory)
+            try removeWorkDirectory(directory)
             work = nil
             showResult(summary(results, keep: payload.plan.keep) + "\n\n清空废纸篓后释放应用空间。移除驱动后请重启 Mac；请把输入法输入设备恢复为实体麦克风。", success: success)
             exit(success ? 0 : 1)
@@ -409,7 +442,7 @@ func runSelfCheck() throws {
                 // Before commit, the App reads error and owns temp cleanup.
                 // Afterwards the executor must remove its surviving copy.
                 if committed || parentPID.map({ kill($0, 0) != 0 }) == true {
-                    try? FileManager.default.removeItem(at: work)
+                    try? removeWorkDirectory(work)
                 }
             }
             if committed {
