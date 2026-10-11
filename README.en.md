@@ -12,13 +12,25 @@ The video above is a 55-second product demonstration (in Chinese). It is an anim
 
 MicForYou is a voice-filtering app for Mac. It uses your registered voice as a reference to reduce background noise and nearby speech, then sends the processed audio to Doubao IME for transcription. It is designed for open offices and shared workspaces where people are talking around you.
 
-## Current status
+## Download and install (trial version)
 
-**Experimental Alpha.** There is no publicly released installer yet; the [Releases page](https://github.com/chenerzhong123-cloud/micforyou/releases) will become the download entry once published. Current installers are available only to maintainers with repository access. The installer is not yet Developer ID signed or notarized by Apple.
+**[Download MicForYou 0.2.2 trial version (Mac installer)](https://github.com/chenerzhong123-cloud/micforyou/releases/download/v0.2.2-trial/MicForYou-0.2.2-trial-macos-arm64.pkg)** · [Release notes and checksum](https://github.com/chenerzhong123-cloud/micforyou/releases/tag/v0.2.2-trial)
 
-- To install: [Installation guide](docs/INSTALL.en.md)
-- Already installed — daily use and limitations: [Usage guide](docs/USAGE.en.md)
-- To build from source or contribute: [Development guide](docs/DEVELOPMENT.en.md)
+The installer is about 443 MB and includes the app, model, and audio components. Install it, open MicForYou, choose your microphone, and register your voice for 45 seconds. Then select **BlackHole 2ch** in Doubao IME to start using it. Restart your Mac when prompted after the first audio-component installation.
+
+macOS may block this trial version on first use; see the [installation guide](docs/INSTALL.en.md) for instructions.
+
+[Installation guide](docs/INSTALL.en.md) · [Usage guide](docs/USAGE.en.md) · [Development guide](docs/DEVELOPMENT.en.md)
+
+## A reading passage for 45-second voice registration
+
+Use your everyday microphone in a quiet room. Speak at your usual volume and pace, with natural pauses. After choosing "注册我的声音" (Register my voice), wait for the 3-second countdown to finish before speaking. You can use the passage below or read another ordinary text. **If you finish early, start again and keep reading until the 45-second recording ends.** There is no need to rush or change your voice.
+
+> This morning, I opened the window and saw sunlight across my desk. The leaves outside moved gently in the breeze. I poured a glass of water and got ready for the day.
+>
+> First, I will organize my notes and write down a few questions for our afternoon meeting. Before it starts, I will check my microphone and take a moment to think.
+>
+> When work is finished, I would like to go for a short walk and buy some fruit and bread. On my way home, I might call a friend and talk about a book we have been reading. These are everyday things, and I can describe them in my usual voice.
 
 ## Performance requirements
 

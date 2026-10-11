@@ -4,7 +4,7 @@
 
 The complete installer (`.pkg`) bundles the menu-bar app, an arm64 Python runtime, inference dependencies, the general REAL-TSE weights, and the officially licensed BlackHole 2ch 0.7.1 driver. No Python, uv, Git, audio driver, or manual model download is required.
 
-**Current status: Experimental Alpha, not publicly released yet.** Installers currently exist as GitHub Draft prereleases for maintainers with repository access; there is no public download for regular users yet. Once published, the same download and install flow applies. The installer is not Developer ID signed or notarized; the app is ad-hoc signed.
+**Trial version 0.2.2.** [Download the installer](https://github.com/chenerzhong123-cloud/micforyou/releases/download/v0.2.2-trial/MicForYou-0.2.2-trial-macos-arm64.pkg). The installer is not Developer ID signed or notarized; the app is ad-hoc signed. If macOS blocks it, follow the installation steps below.
 
 ## Recommended hardware
 
@@ -16,7 +16,7 @@ The complete installer (`.pkg`) bundles the menu-bar app, an arm64 Python runtim
 
 ## Download and install
 
-1. Maintainers with repository access can download the `.pkg` and `.sha256` from the prerelease Assets on the [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases) page. Do not treat `Source code (zip)` as an installer.
+1. Download the `.pkg` and `.sha256` from Assets on the [trial release page](https://github.com/chenerzhong123-cloud/micforyou/releases/tag/v0.2.2-trial). Do not treat `Source code (zip)` as an installer.
    Verify integrity in your download directory with `shasum -a 256 -c <installer-file-name>.sha256`.
 2. Before installing, choose "结束" (End) in the old app, cancel any running registration, and quit the app. Double-click the `.pkg` and enter your administrator password when prompted. The app installs to `/Applications/MicForYou.app` and the audio driver to `/Library/Audio/Plug-Ins/HAL`. The installer deletes no personal data and never launches the app.
 3. Restart your Mac if prompted after a first-time or upgraded driver install; an equal or newer driver version is skipped automatically. If an old copy remains in `~/Applications`, launch the new version from `/Applications`.

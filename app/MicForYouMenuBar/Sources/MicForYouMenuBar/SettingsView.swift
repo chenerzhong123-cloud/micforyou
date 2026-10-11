@@ -115,7 +115,7 @@ struct SettingsView: View {
 
             Label {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Experimental Alpha")
+                    Text("试用版本")
                         .font(.subheadline.weight(.medium))
                     Text("当前版本可减少部分他人声，但不能保证完全隔离；目标缺席时仍可能放行。默认故障策略为静音。")
                         .font(.caption)

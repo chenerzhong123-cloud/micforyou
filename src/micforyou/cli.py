@@ -320,7 +320,7 @@ def command_status(args: argparse.Namespace) -> None:
             **product_status(config),
             "runtime": runtime_status(args.config),
             "quality_notice": (
-                "Experimental Alpha: partial filtering only; target-absent "
+                "Trial version: partial filtering only; target-absent "
                 "speech may still pass."
             ),
         },

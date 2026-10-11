@@ -73,7 +73,7 @@ struct MenuContentView: View {
             if model.isWorking {
                 ProgressView().controlSize(.small)
             } else {
-                Text("Alpha")
+                Text("试用")
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 7)

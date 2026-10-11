@@ -8,7 +8,7 @@ if [[ $# -lt 4 ]]; then
 fi
 release_root="${5:-$project_root/outputs/releases/installer}"
 version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$package_root/Resources/Info.plist")
-name="MicForYou-${version}-local-alpha-macos-arm64"
+name="MicForYou-${version}-trial-macos-arm64"
 staging="$release_root/$name"
 mkdir -p "$staging"
 "$1/bin/python3.12" -B "$project_root/tools/bundle/build_bundle.py" \

@@ -4,7 +4,7 @@
 
 完整安装包（`.pkg`）内置菜单栏 App、arm64 Python 运行环境、推理依赖、通用 REAL-TSE 权重和经集成授权的官方 BlackHole 2ch 0.7.1 驱动，无需另装 Python、uv、Git、音频驱动或手动下载模型。
 
-**当前状态：Experimental Alpha，尚未公开发布。** 安装包目前以 GitHub Draft prerelease 形式提供给有仓库访问权限的维护者验收，普通用户暂无可下载的公开安装包；公开发布后使用同样的下载与安装流程。安装包尚未完成 Developer ID 签名与 Apple 公证，App 为 ad-hoc 签名。
+**试用版本 0.2.2。** [下载安装包](https://github.com/chenerzhong123-cloud/micforyou/releases/download/v0.2.2-trial/MicForYou-0.2.2-trial-macos-arm64.pkg)。安装包尚未完成 Developer ID 签名与 Apple 公证，App 为 ad-hoc 签名；若 macOS 拦截，请按下方安装步骤处理。
 
 ## 推荐设备
 
@@ -16,7 +16,7 @@
 
 ## 下载与安装
 
-1. 有仓库访问权限的维护者可在 [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases) 的 prerelease Assets 下载 `.pkg` 与 `.sha256`。不要把 `Source code (zip)` 当作安装包。
+1. 在 [试用版本下载页面](https://github.com/chenerzhong123-cloud/micforyou/releases/tag/v0.2.2-trial) 的 Assets 下载 `.pkg` 与 `.sha256`。不要把 `Source code (zip)` 当作安装包。
    在下载目录运行 `shasum -a 256 -c <安装包文件名>.sha256` 核对完整性。
 2. 安装前先在旧版中点击“结束”、取消正在进行的注册并退出 App。双击 `.pkg`，按系统提示输入管理员密码。App 固定安装到 `/Applications/MicForYou.app`，音频驱动安装到 `/Library/Audio/Plug-Ins/HAL`。安装器不删除个人数据，也不会自动启动 App。
 3. 首次安装或升级驱动后按提示重启 Mac；已有同版或更高版驱动时自动跳过该组件。若 `~/Applications` 仍有旧版副本，请启动 `/Applications` 中的新版本。

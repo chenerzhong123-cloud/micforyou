@@ -5,13 +5,13 @@ package_root="$(cd "$(dirname "$0")" && pwd)"
 project_root="$(cd "$package_root/../.." && pwd)"
 version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$package_root/Resources/Info.plist")
 architecture="$(uname -m)"
-release_name="MicForYou-${version}-alpha-macos-${architecture}"
+release_name="MicForYou-${version}-controller-macos-${architecture}"
 release_root="${1:-$project_root/outputs/releases}"
 staging="$release_root/$release_name"
 mkdir -p "$staging"
 "$package_root/build_app.sh" "$staging/MicForYou.app"
 cat > "$staging/INSTALL.txt" <<'GUIDE'
-MicForYou — Experimental Alpha
+MicForYou — 试用版本 / Trial version
 
 中文：此包只有菜单栏 App，不含 Python 环境、REAL-TSE 权重、声音注册或 BlackHole。
 先按仓库的安装指南完成本地设置，再把 MicForYou.app 放入 ~/Applications。

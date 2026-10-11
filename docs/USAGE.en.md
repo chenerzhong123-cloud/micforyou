@@ -8,7 +8,7 @@ This guide explains the real behavior of the menu-bar interface, performance req
 
 After first-time setup, open the MicForYou menu, click "开始过滤" (Start filtering), wait for the "正在过滤" (Filtering) state, then dictate with Doubao IME.
 
-The menu bar always shows: current status (e.g. "可以开始" Ready / "正在过滤" Filtering / "正在恢复" Recovering / "已安全静音" Safely muted), the current route (`physical microphone → BlackHole 2ch`), the currently recommended action, and the Settings entry. The `Alpha` label is always visible.
+The menu bar always shows: current status (e.g. "可以开始" Ready / "正在过滤" Filtering / "正在恢复" Recovering / "已安全静音" Safely muted), the current route (`physical microphone → BlackHole 2ch`), the currently recommended action, and the Settings entry. The `试用` (Trial) label is always visible.
 
 ## What each action really does
 
