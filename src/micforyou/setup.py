@@ -181,7 +181,7 @@ def run_worker(config_path: Path, input_device: str, token: str) -> None:
                       "--enrollment-seconds", str(candidate.enrollment_seconds)]
 
             def run(script, arguments):
-                subprocess.run([sys.executable, str(root / "experiments" / script),
+                subprocess.run([sys.executable, str(root / "tools" / "inference" / script),
                                 *common, *arguments], cwd=root, check=True)
 
             run("export_real_tse_onnx.py", ["--output", str(candidate.onnx_model),

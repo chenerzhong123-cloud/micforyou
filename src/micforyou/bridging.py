@@ -1,7 +1,7 @@
 """Device-independent core of the live bridge.
 
 ``AudioRing`` is the bounded output buffer previously defined inline in
-``experiments/run_real_tse_bridge.py``. ``BridgeEngine`` owns the same
+``tools/inference/run_real_tse_bridge.py``. ``BridgeEngine`` owns the same
 worker/callback split and fault-silence contract as the live script, but takes
 the DSP chain as an injectable callable so tests can exercise overflow and
 inference-failure behavior without torch or audio hardware. ``LatencyLedger``

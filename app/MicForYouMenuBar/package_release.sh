@@ -25,8 +25,8 @@ End releases the microphone. Quitting the interface preserves background audio.
 The app is ad-hoc signed, without Developer ID signing or Apple notarization.
 
 https://github.com/chenerzhong123-cloud/micforyou
-Chinese: docs/INSTALL.md
-English: docs/INSTALL.en.md
+Chinese: docs/DEVELOPMENT.md
+English: docs/DEVELOPMENT.en.md
 GUIDE
 archive="$release_root/$release_name.app.zip"
 ditto -c -k --sequesterRsrc --keepParent "$staging" "$archive"

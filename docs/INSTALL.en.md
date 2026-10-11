@@ -1,147 +1,57 @@
-# Install MicForYou from GitHub
+# Installing MicForYou (complete installer)
 
-> For the complete local 0.2.0 alpha, use [the bundled-app guide](BUNDLED_APP.en.md). This page covers the developer/source installation path.
-English · [简体中文](INSTALL.md) · [Back to README](../README.en.md)
+[简体中文](INSTALL.md) · [Back to README](../README.en.md)
 
-This release requires Terminal and local model setup. It is intended for users familiar with Python/Git. All paths below belong to your own machine. The menu-bar UI requires macOS 14+; the model has been tested on M5 and fails the measured real-time gate on M1. Neither the source nor the app shell includes weights.
+The complete installer (`.pkg`) bundles the menu-bar app, an arm64 Python runtime, inference dependencies, the general REAL-TSE weights, and the officially licensed BlackHole 2ch 0.7.1 driver. No Python, uv, Git, audio driver, or manual model download is required.
 
-## 1. Tools and source
+**Current status: Experimental Alpha, not publicly released yet.** Installers currently exist as GitHub Draft prereleases for maintainers with repository access; there is no public download for regular users yet. Once published, the same download and install flow applies. The installer is not Developer ID signed or notarized; the app is ad-hoc signed.
 
-Install Apple Command Line Tools if needed:
+## Recommended hardware
 
-```bash
-xcode-select --install
-```
+- macOS 14 or later, Apple Silicon. Intel Macs are unsupported.
+- MacBook Air M5 is the only baseline validated over a longer run so far. One tested M1 MacBook Pro did not meet the real-time threshold and cannot run live filtering.
+- Other chips, memory configurations, and system loads must pass the built-in performance check during voice registration; a chip name alone is not sufficient.
+- The installed app is about 1 GB; voice registration generates an additional personal model and reports. Reserve at least 3 GB of free disk space. The minimum memory requirement has not been determined by independent device testing.
+- Use AC power and complete registration under your normal workload.
 
-Install uv using its [official instructions](https://docs.astral.sh/uv/getting-started/installation/). If you already use Homebrew:
+## Download and install
 
-```bash
-brew install uv
-```
+1. Maintainers with repository access can download the `.pkg` and `.sha256` from the prerelease Assets on the [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases) page. Do not treat `Source code (zip)` as an installer.
+   Verify integrity in your download directory with `shasum -a 256 -c <installer-file-name>.sha256`.
+2. Before installing, choose "结束" (End) in the old app, cancel any running registration, and quit the app. Double-click the `.pkg` and enter your administrator password when prompted. The app installs to `/Applications/MicForYou.app` and the audio driver to `/Library/Audio/Plug-Ins/HAL`. The installer deletes no personal data and never launches the app.
+3. Restart your Mac if prompted after a first-time or upgraded driver install; an equal or newer driver version is skipped automatically. If an old copy remains in `~/Applications`, launch the new version from `/Applications`.
+4. The combined installer is not Developer ID signed or notarized, and the original BlackHole package's signing does not cover the combined package. If macOS blocks it, follow [Apple's instructions](https://support.apple.com/en-us/102445) and choose "Open Anyway" only for packages from a confirmed source.
+5. If the audio driver is unexpectedly missing, open the new app's Settings and click "安装音频组件…" (Install audio components) to run the bundled official offline repair installer; restart, then click "刷新" (Refresh). No separate download is needed.
 
-With repository access, clone and prepare the controller:
+## First-time setup (voice registration)
 
-```bash
-git clone https://github.com/chenerzhong123-cloud/micforyou.git
-cd micforyou
-uv sync --extra dev
-```
+1. Open MicForYou from Applications and go to Settings.
+2. Select the microphone you use daily.
+3. Click "注册我的声音" (Register my voice) and allow MicForYou to use the microphone when macOS asks.
+4. Read naturally for 45 seconds in a quiet room (a 3-second countdown precedes recording). The app then automatically exports your personal model, verifies numerical consistency, and benchmarks this Mac; progress is shown in the Settings window.
+5. Registration can be cancelled; failed attempts can be retried and never replace an existing registration. Performance gates: an eligible candidate with RTF ≤ 0.80, simulated internal audio-path latency p95 < 400 ms, and no faults or audio underruns. The check does not include Doubao recognition time.
+6. After registration succeeds, select **BlackHole 2ch** as the input device in Doubao IME, click "开始过滤" (Start filtering) in MicForYou, and wait for the "正在过滤" (Filtering) state before dictating.
 
-Run the remaining commands from this project directory. GitHub's source ZIP is also usable; for updates, download fresh source and point the configuration to the retained project directory. Keep the configured source location and its `.venv` after installing the app.
+See the [usage guide](USAGE.en.md) for the semantics and limitations of daily operations (pause, resume, end).
 
-## 2. Audio routing
+## Updating
 
-Install **BlackHole 2ch** from the [official site](https://existential.audio/blackhole/) or its [Homebrew cask](https://formulae.brew.sh/cask/blackhole-2ch):
+1. First choose "结束" (End) and quit the old app — a running app, audio session, or registration task stops the installer's preflight check.
+2. Download and install the new complete `.pkg`, then open `/Applications/MicForYou.app`.
+3. Voice registrations and settings in `~/Library/Application Support/MicForYou` are preserved. After updating, confirm the app reports ready before starting to filter.
+4. When upgrading from the legacy controller versions (0.1.x ZIP), register your voice once in the complete app; the configuration switches only after the new registration passes.
 
-```bash
-brew install --cask blackhole-2ch
-```
+## Uninstalling
 
-Restart your Mac, run `uv run micforyou devices`, and confirm that BlackHole 2ch and your everyday physical microphone appear. MicForYou outputs to BlackHole; select it as Doubao's input. Keep your system output on your usual speakers/headphones.
+1. Choose "结束" (End) and quit the menu-bar app.
+2. Move `/Applications/MicForYou.app` (and any legacy ZIP copy in `~/Applications`) to the Trash.
+3. Restore your everyday microphone as the input device in Doubao IME (or system sound settings).
+4. Configuration and voice registrations live in `~/Library/Application Support/MicForYou`; delete the folder once you are sure you no longer need it. The BlackHole driver is at `/Library/Audio/Plug-Ins/HAL`; use its official uninstall method if you want to remove it.
 
-## 3. Separate model environment
+## Licensing
 
-Define local paths. If you reopen Terminal, reset these variables from the project directory:
+Original project code and documentation use [Apache-2.0](../LICENSE); attribution is in [NOTICE](../NOTICE). This license does not replace the terms of the model, native libraries, and the official driver:
 
-```bash
-MFY_ROOT="$PWD"
-MFY_DATA="$HOME/Library/Application Support/MicForYou/data"
-MFY_REPO="$MFY_DATA/wesep-real-tse"
-MFY_MODEL="$MFY_REPO/pretrained/tfmap_context_causal_100"
-MFY_RUNTIME="$MFY_DATA/runtime"
-MFY_VOICE="$MFY_DATA/voice/enrollment.wav"
-MFY_ONNX="$MFY_DATA/voice/personalized.onnx"
-mkdir -p "$MFY_DATA/voice" "$MFY_DATA/reports"
-git clone https://github.com/REAL-TSE/wesep-real-tse.git "$MFY_REPO"
-git -C "$MFY_REPO" checkout 2a540977a348fbaa92e623210505430e2cec608d
-uv venv --python 3.12 "$MFY_RUNTIME"
-uv pip install --python "$MFY_RUNTIME/bin/python" -r requirements-runtime.txt
-```
-
-Keep the controller and model environments separate. Do not install upstream's old `requirements.txt` directly into the project `.venv`. Our runtime requirements pin model dependencies; installation needs network access. Upstream dependencies may include other models; MicForYou does not invoke ASR.
-
-Obtain the checkpoint yourself from the [upstream pretrained-model instructions](https://github.com/REAL-TSE/wesep-real-tse#2-download-pretrained-model) and follow their usage conditions. Use **`tfmap_context_causal_100`**, not its noncausal variant. Check these files:
-
-```bash
-test -f "$MFY_MODEL/avg_model.pt"
-test -f "$MFY_MODEL/config.yaml"
-```
-
-The 2026-10-09 author reply grants Apache-2.0 for his own code and trained parameters, excluding WeSpeaker pretrained ECAPA parameters. The latter retain upstream CC BY 4.0 attribution. Complete app bundles can include the general checkpoint under these scoped terms; see the [licensing review](MODEL_DISTRIBUTION_AUDIT.md) and [notices](../licenses/MODEL_NOTICES.md).
-
-## 4. Enroll, export, and validate
-
-Find your everyday microphone's exact name, set the variable accordingly, and record 45 seconds of your own voice:
-
-```bash
-uv run micforyou devices
-MFY_MIC="YOUR EVERYDAY PHYSICAL MICROPHONE"
-uv run micforyou record --input-device "$MFY_MIC" \
-  --output-file "$MFY_VOICE" --duration 45 --countdown 3
-```
-
-Use a quiet environment and natural speech. Training is not required. Grant macOS microphone permission to the process actually recording. Enroll with the same microphone you will use daily, and use only your own voice. Audio is written to the selected local path.
-
-```bash
-"$MFY_RUNTIME/bin/python" experiments/export_real_tse_onnx.py \
-  --repo "$MFY_REPO" --model-dir "$MFY_MODEL" \
-  --enrollment "$MFY_VOICE" --enrollment-seconds 6 \
-  --output "$MFY_ONNX" --report "$MFY_DATA/reports/onnx-export.json"
-
-"$MFY_RUNTIME/bin/python" experiments/compare_torch_onnx.py \
-  --repo "$MFY_REPO" --model-dir "$MFY_MODEL" \
-  --enrollment "$MFY_VOICE" --enrollment-seconds 6 \
-  --onnx "$MFY_ONNX" --frames-per-chunk 8 --chunks 100 \
-  --result "$MFY_DATA/reports/onnx-correctness.json"
-```
-
-The last report must have `gate.verdict: PASS`. Do not start live filtering if it fails.
-
-## 5. Benchmark and configure
-
-Benchmark the ONNX path using synthetic input, without opening a microphone:
-
-```bash
-"$MFY_RUNTIME/bin/python" experiments/benchmark_onnx_tse.py \
-  --repo "$MFY_REPO" --model-dir "$MFY_MODEL" \
-  --enrollment "$MFY_VOICE" --onnx "$MFY_ONNX" \
-  --audio-seconds 60 --frames 8 16 24 32 --threads 1 \
-  --result "$MFY_DATA/reports/benchmark.json"
-```
-
-The report’s `gate` should be CPU SUCCESS (a valid candidate with RTF ≤0.80); MARGINAL/FAIL is not a recommended configuration. Apply the [performance guide](PERFORMANCE_GUIDE.md) and verify paced latency with `measure_bridge_latency.py`. Do not force a run after an unsupported result, FAULT, sustained underrun, or excessive latency. `MFY_FRAMES=8` below is only an example from the tested M5. Use the candidate that actually passes on your machine; repeat correctness and paced checks at that frame size for other candidates.
-
-```bash
-MFY_FRAMES=8
-uv run micforyou configure \
-  --input-device "$MFY_MIC" --output-device "BlackHole 2ch" \
-  --model-repo "$MFY_REPO" --model-dir "$MFY_MODEL" \
-  --enrollment "$MFY_VOICE" --onnx "$MFY_ONNX" \
-  --runtime-python "$MFY_RUNTIME/bin/python" --project-root "$MFY_ROOT" \
-  --frames-per-chunk "$MFY_FRAMES" --onnx-threads 1 --fault-policy silence
-uv run micforyou status
-```
-
-`ready: true` means required paths and devices exist. It does not establish performance or filtering quality. Check local performance before first use and when system load changes.
-
-## 6. Install the app and select input
-
-```bash
-./app/MicForYouMenuBar/install_app.sh
-```
-
-This builds and installs `~/Applications/MicForYou.app`, preserves configuration/models, and adds no login item. Building requires Swift 6+; update Apple developer tools if `swift --version` is older. The current UI uses Chinese labels.
-
-For a future prebuilt `.app.zip`, extract and place the `.app` in `~/Applications`; still complete steps 1–5 first. A prebuilt shell does not create Python environments or enroll your voice. Current builds are ad-hoc signed and not notarized; follow [Apple's Open Anyway instructions](https://support.apple.com/en-us/102445) if first launch is blocked.
-
-Select `BlackHole 2ch` in Doubao. If it lacks its own device selector, choose it manually in system sound input. Click “开始过滤” (Start filtering), wait for “正在过滤” (Filtering), and dictate. Check a short phrase while filtering, during raw passthrough on pause, and after resuming. Click “结束” (End) when you want capture to stop.
-
-## Update and recover
-
-End audio and quit the interface. Git-clone users run `git pull --ff-only`, `uv sync --extra dev`, and `install_app.sh` again. If model dependencies change, also run `uv pip install --python "$MFY_RUNTIME/bin/python" -r requirements-runtime.txt` using your saved runtime path. Re-enrollment and input reselection are usually unnecessary; changing the physical microphone requires new enrollment and a short baseline test.
-
-For rollback, stop audio before reverting source/App. Older controllers cannot read runtime-state/2 directly. Back up configuration, then move aside the stopped `state.json` so the old version can recreate its state. Do not overwrite or delete enrollment to fix runtime metadata.
-
-See [README](../README.en.md) for troubleshooting and uninstalling.
-
-First model loading may include upstream JIT compilation and take longer than later starts. Wait for the actual ready/filtering state before dictating.
+- The model is not under a single license: the REAL-TSE author-owned source and trained parameters are Apache-2.0 licensed; the WeSpeaker ECAPA pretrained parameters retain upstream CC BY 4.0 attribution. Full statement in the [model notices](../licenses/MODEL_NOTICES.md).
+- Source code and licenses of identified LGPL/MPL native components ship with the package; see the [native runtime notices](../licenses/NATIVE_NOTICES.md).
+- The official BlackHole binaries are distributed under a separate integration authorization; see the [BlackHole notices](../licenses/BLACKHOLE_NOTICES.md).

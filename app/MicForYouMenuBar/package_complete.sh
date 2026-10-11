@@ -18,7 +18,7 @@ mkdir -p "$staging"
 from pathlib import Path
 import sys
 project, staging = map(Path, sys.argv[1:])
-for source, destination in [("BUNDLED_APP.md", "INSTALL.zh.md"), ("BUNDLED_APP.en.md", "INSTALL.en.md")]:
+for source, destination in [("INSTALL.md", "INSTALL.zh.md"), ("INSTALL.en.md", "INSTALL.en.md")]:
     text = (project / "docs" / source).read_text()
     text = text.replace("../licenses/", "MicForYou.app/Contents/Resources/Runtime/licenses/")
     text = text.replace("../LICENSE", "MicForYou.app/Contents/Resources/Runtime/licenses/PROJECT_LICENSE.txt")

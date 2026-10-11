@@ -56,7 +56,7 @@ def test_bridge_command_contains_explicit_safe_runtime_contract(tmp_path: Path) 
     command = build_bridge_command(config(tmp_path), 0, tmp_path / "result.json")
 
     assert command[0] == str(tmp_path / "python")
-    assert command[1] == str(tmp_path / "project/experiments/run_real_tse_bridge.py")
+    assert command[1] == str(tmp_path / "project/tools/inference/run_real_tse_bridge.py")
     assert command[command.index("--backend") + 1] == "onnx"
     assert command[command.index("--fault-policy") + 1] == "silence"
     assert command[command.index("--route-change-policy") + 1] == "continue_tse"

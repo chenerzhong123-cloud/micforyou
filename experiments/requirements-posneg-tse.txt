@@ -1,7 +1,0 @@
-# Probe-only environment for ShitongXu/TSE-Pos-Neg-Enroll on macOS arm64.
-# Python 3.10 is required because espnet==202412 pins NumPy below 1.24.
-torch==2.6.0
-numpy==1.23.5
-espnet==202412
-asteroid-filterbanks==0.4.0
-torchmetrics==0.11.4

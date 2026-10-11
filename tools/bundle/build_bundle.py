@@ -93,9 +93,9 @@ def main():
         if item.is_symlink() and not item.resolve().is_relative_to(root.resolve()):
             raise SystemExit(f"External runtime symlink: {item}")
     copy_code(PROJECT / "src", root / "src")
-    (root / "experiments").mkdir()
+    (root / "tools" / "inference").mkdir(parents=True)
     for name in SCRIPTS:
-        shutil.copy2(PROJECT / "experiments" / name, root / "experiments" / name)
+        shutil.copy2(PROJECT / "tools" / "inference" / name, root / "tools" / "inference" / name)
     shutil.copy2(PROJECT / "tools/bundle/bootstrap.py", root / "bootstrap.py")
     vendor = root / "vendor"
     vendor.mkdir()

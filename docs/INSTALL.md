@@ -1,147 +1,57 @@
-# 从 GitHub 安装 MicForYou
+# 安装 MicForYou（完整安装包）
 
-> 0.2.0 本地完整 Alpha 请使用 [完整 App 指南](BUNDLED_APP.md)。本页保留开发者／源码安装步骤。
 [English](INSTALL.en.md) · [返回 README](../README.md)
 
-当前版本需要 Terminal 与本地模型设置；适合有 Python / Git 使用经验的用户。本指南使用用户自己的目录，不依赖开发者机器上的 `/Users/deuce/...` 路径。菜单栏界面要求 macOS 14+；当前模型在 M5 上验证过，在 M1 上未达到实时门槛。源码和应用外壳均不带模型权重。
+完整安装包（`.pkg`）内置菜单栏 App、arm64 Python 运行环境、推理依赖、通用 REAL-TSE 权重和经集成授权的官方 BlackHole 2ch 0.7.1 驱动，无需另装 Python、uv、Git、音频驱动或手动下载模型。
 
-## 1．准备工具和源码
+**当前状态：Experimental Alpha，尚未公开发布。** 安装包目前以 GitHub Draft prerelease 形式提供给有仓库访问权限的维护者验收，普通用户暂无可下载的公开安装包；公开发布后使用同样的下载与安装流程。安装包尚未完成 Developer ID 签名与 Apple 公证，App 为 ad-hoc 签名。
 
-安装 Apple Command Line Tools；系统已有时无需重复：
+## 推荐设备
 
-```bash
-xcode-select --install
-```
+- macOS 14 或更高、Apple Silicon；不支持 Intel Mac。
+- MacBook Air M5 是目前唯一完成较长时间验证的基线；已测试的一台 M1 MacBook Pro 未达到实时门槛，不支持实时过滤。
+- 其他芯片、内存配置和系统负载须通过 App 注册时的内置性能检查，不能仅凭芯片型号推定支持。
+- 解压后 App 约 1 GB，首次注册会额外生成个人模型与报告；建议至少预留 3 GB 可用磁盘空间。内存最低要求尚未通过独立设备测试确定。
+- 建议接通电源、在日常工作负载下完成注册检查。
 
-按 [uv 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv。如果已使用 Homebrew：
+## 下载与安装
 
-```bash
-brew install uv
-```
+1. 有仓库访问权限的维护者可在 [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases) 的 prerelease Assets 下载 `.pkg` 与 `.sha256`。不要把 `Source code (zip)` 当作安装包。
+   在下载目录运行 `shasum -a 256 -c <安装包文件名>.sha256` 核对完整性。
+2. 安装前先在旧版中点击“结束”、取消正在进行的注册并退出 App。双击 `.pkg`，按系统提示输入管理员密码。App 固定安装到 `/Applications/MicForYou.app`，音频驱动安装到 `/Library/Audio/Plug-Ins/HAL`。安装器不删除个人数据，也不会自动启动 App。
+3. 首次安装或升级驱动后按提示重启 Mac；已有同版或更高版驱动时自动跳过该组件。若 `~/Applications` 仍有旧版副本，请启动 `/Applications` 中的新版本。
+4. 组合安装包未做 Developer ID 签名／公证，BlackHole 原始包的签名公证不覆盖组合包。若系统拦截，按 [Apple 官方说明](https://support.apple.com/en-us/102445) 仅对确认来源的包选择“仍要打开”。
+5. 若音频驱动意外缺失，打开新 App 的“设置”，点击“安装音频组件…”运行随 App 附带的官方离线修复安装器，重启后点击“刷新”，无需另行下载。
 
-取得仓库访问权限后，克隆源码并安装控制环境：
+## 首次设置（声音注册）
 
-```bash
-git clone https://github.com/chenerzhong123-cloud/micforyou.git
-cd micforyou
-uv sync --extra dev
-```
+1. 打开“应用程序”中的 MicForYou，进入“设置”。
+2. 选择日常使用的麦克风。
+3. 点击“注册我的声音”，按 macOS 提示允许 MicForYou 使用麦克风。
+4. 在安静环境自然朗读 45 秒（开始前有 3 秒倒计时）。App 随后自动导出个人模型、校验数值一致性并测试本机性能，进度显示在设置窗口。
+5. 注册过程可以取消；失败后可重试，旧的注册不会被失败结果替换。性能门槛：有效候选 RTF ≤ 0.80、模拟音频链路内部延迟 p95 < 400 ms 且无故障或音频欠载。该检查不包含豆包识别耗时。
+6. 注册成功后，在豆包输入法中将输入设备选为 **BlackHole 2ch**，点击 MicForYou 的“开始过滤”，等待状态变为“正在过滤”后再开始语音输入。
 
-以下步骤都在这个项目目录执行。也可以使用 GitHub 的源码 ZIP；更新时重新下载源码，并将配置指向保留的项目目录。不要删掉项目 `.venv` 或移动配置引用的源码目录。
+日常操作（暂停、继续、结束）的语义与限制见[使用指南](USAGE.md)。
 
-## 2．安装音频路由
+## 更新
 
-从 [BlackHole 官方网站](https://existential.audio/blackhole/) 安装 **2ch** 版本，或使用 [Homebrew 官方 cask](https://formulae.brew.sh/cask/blackhole-2ch)：
+1. 先点击“结束”并退出旧版 App（正在运行的 App／音频／注册任务会使安装预检查停止）。
+2. 下载并安装新版完整 `.pkg`，再打开 `/Applications/MicForYou.app`。
+3. `~/Library/Application Support/MicForYou` 中的声音注册与设置会保留；更新后先确认状态就绪，再开始过滤。
+4. 从旧控制器版本（0.1.x ZIP）升级时，需在完整 App 中重新注册一次声音；新注册通过后才切换配置。
 
-```bash
-brew install --cask blackhole-2ch
-```
+## 卸载
 
-安装后重启 Mac，再运行 `uv run micforyou devices`，确认有 `BlackHole 2ch` 和日常实体麦克风。MicForYou 内部将音频送往 BlackHole，豆包输入选择它；系统输出继续保留日常扬声器 / 耳机。
+1. 点击“结束”，退出菜单栏 App。
+2. 将 `/Applications/MicForYou.app`（以及旧 ZIP 遗留在 `~/Applications` 的副本）移入废纸篓。
+3. 在豆包输入法（或系统声音设置）中把输入设备恢复为日常麦克风。
+4. 配置与声音注册保存在 `~/Library/Application Support/MicForYou`，确认不再需要时可整体删除。BlackHole 驱动位于 `/Library/Audio/Plug-Ins/HAL`，如需移除请使用其官方卸载方式。
 
-## 3．准备独立模型环境
+## 许可
 
-定义本机路径。后续重新打开 Terminal 时，需要在项目目录重设这些变量：
+本项目自有代码与文档采用 [Apache-2.0](../LICENSE)，署名见 [NOTICE](../NOTICE)。该许可不替代模型、运行库与官方驱动的各自条款：
 
-```bash
-MFY_ROOT="$PWD"
-MFY_DATA="$HOME/Library/Application Support/MicForYou/data"
-MFY_REPO="$MFY_DATA/wesep-real-tse"
-MFY_MODEL="$MFY_REPO/pretrained/tfmap_context_causal_100"
-MFY_RUNTIME="$MFY_DATA/runtime"
-MFY_VOICE="$MFY_DATA/voice/enrollment.wav"
-MFY_ONNX="$MFY_DATA/voice/personalized.onnx"
-mkdir -p "$MFY_DATA/voice" "$MFY_DATA/reports"
-git clone https://github.com/REAL-TSE/wesep-real-tse.git "$MFY_REPO"
-git -C "$MFY_REPO" checkout 2a540977a348fbaa92e623210505430e2cec608d
-uv venv --python 3.12 "$MFY_RUNTIME"
-uv pip install --python "$MFY_RUNTIME/bin/python" -r requirements-runtime.txt
-```
-
-控制环境与模型环境分开：不要把上游旧版 `requirements.txt` 直接装到项目 `.venv`。`requirements-runtime.txt` 固定本项目的模型依赖版本；安装需要网络。Python 包可能包含上游的其他模型依赖，MicForYou 不调用 ASR。
-
-从 [REAL-TSE 上游 README 的 pretrained model 部分](https://github.com/REAL-TSE/wesep-real-tse#2-download-pretrained-model) 自行取得权重，并按其使用条件解压。选用 **`tfmap_context_causal_100`**，不要使用非因果版本。检查以下文件存在：
-
-```bash
-test -f "$MFY_MODEL/avg_model.pt"
-test -f "$MFY_MODEL/config.yaml"
-```
-
-2026-10-09 作者回信已授予其自有代码和训练参数 Apache-2.0 许可，排除的 WeSpeaker ECAPA 预训练参数按官方 CC BY 4.0 声明处理。完整 App 可按这些分开的条款内置通用权重；见 [许可核查](MODEL_DISTRIBUTION_AUDIT.md) 与 [声明](../licenses/MODEL_NOTICES.md)。
-
-## 4．注册、导出与校验
-
-先找出日常麦克风的准确名称，再录制自己的 45 秒声音。以下变量的值需替换成设备列表里的名称：
-
-```bash
-uv run micforyou devices
-MFY_MIC="你的日常实体麦克风名称"
-uv run micforyou record --input-device "$MFY_MIC" \
-  --output-file "$MFY_VOICE" --duration 45 --countdown 3
-```
-
-使用安静环境、自然语速，不需要训练模型。按 macOS 提示允许实际录音进程使用麦克风。注册必须来自日常使用的麦克风；不要用他人的声音。音频只写入指定的本机路径。
-
-```bash
-"$MFY_RUNTIME/bin/python" experiments/export_real_tse_onnx.py \
-  --repo "$MFY_REPO" --model-dir "$MFY_MODEL" \
-  --enrollment "$MFY_VOICE" --enrollment-seconds 6 \
-  --output "$MFY_ONNX" --report "$MFY_DATA/reports/onnx-export.json"
-
-"$MFY_RUNTIME/bin/python" experiments/compare_torch_onnx.py \
-  --repo "$MFY_REPO" --model-dir "$MFY_MODEL" \
-  --enrollment "$MFY_VOICE" --enrollment-seconds 6 \
-  --onnx "$MFY_ONNX" --frames-per-chunk 8 --chunks 100 \
-  --result "$MFY_DATA/reports/onnx-correctness.json"
-```
-
-最后一份报告的 `gate.verdict` 必须是 `PASS`。若失败，不要启动实时过滤。
-
-## 5．本机性能检查与配置
-
-运行 ONNX 全路径 benchmark，输入为合成信号，不打开真实麦克风：
-
-```bash
-"$MFY_RUNTIME/bin/python" experiments/benchmark_onnx_tse.py \
-  --repo "$MFY_REPO" --model-dir "$MFY_MODEL" \
-  --enrollment "$MFY_VOICE" --onnx "$MFY_ONNX" \
-  --audio-seconds 60 --frames 8 16 24 32 --threads 1 \
-  --result "$MFY_DATA/reports/benchmark.json"
-```
-
-报告的 `gate` 应为 CPU SUCCESS（有效候选 RTF ≤0.80）；MARGINAL / FAIL 不作为当前推荐配置。依照 [性能指南](PERFORMANCE_GUIDE.md) 判断是否有足够实时余量，并用 `measure_bridge_latency.py` 做配速复核。`unsupported`、FAULT、持续 underrun 或过高延迟时，不要强行开始。下面的 `MFY_FRAMES=8` 只是已验证 M5 的示例；必须改为本机实际通过的候选。其他候选的 ONNX correctness 和配速检查也需按相同帧数重做。
-
-```bash
-MFY_FRAMES=8
-uv run micforyou configure \
-  --input-device "$MFY_MIC" --output-device "BlackHole 2ch" \
-  --model-repo "$MFY_REPO" --model-dir "$MFY_MODEL" \
-  --enrollment "$MFY_VOICE" --onnx "$MFY_ONNX" \
-  --runtime-python "$MFY_RUNTIME/bin/python" --project-root "$MFY_ROOT" \
-  --frames-per-chunk "$MFY_FRAMES" --onnx-threads 1 --fault-policy silence
-uv run micforyou status
-```
-
-`ready: true` 仅说明路径和设备齐全，不等于性能或过滤质量已通过。首次使用和环境负载变化后都应参考本机性能结果。
-
-## 6．安装应用、选择输入
-
-```bash
-./app/MicForYouMenuBar/install_app.sh
-```
-
-它构建并安装 `~/Applications/MicForYou.app`，保留配置与模型，不加开机启动项。构建需要 Swift 6+ 工具链；若 `swift --version` 低于 6，请更新 Apple 开发工具。菜单栏应用当前使用中文界面。
-
-若日后下载预构建 `.app.zip`，解压后将 `.app` 放入 `~/Applications`，仍先完成步骤 1–5。预构建包不会替你创建 Python 环境或注册声音。当前构建为 ad-hoc 签名、未公证，首次打开被拦截时按 [Apple 的“仍要打开”说明](https://support.apple.com/en-us/102445) 操作。
-
-在豆包输入法选择 `BlackHole 2ch`。若豆包没有独立设备选择器，手动在系统声音输入中选择它。点击“开始过滤”，等待“正在过滤”再口述。先用短句检查本人表达、暂停后的原音和继续后的过滤；需要结束收音时点击“结束”。
-
-## 更新与恢复
-
-先“结束”再退出界面。Git clone 用户执行 `git pull --ff-only`、`uv sync --extra dev`，然后重新运行 `install_app.sh`。模型依赖变化时，另外用保存的模型环境运行 `uv pip install --python "$MFY_RUNTIME/bin/python" -r requirements-runtime.txt`。通常不需要重新注册或重选豆包输入；更换实体麦克风后要重新注册并做基线。
-
-如需回退，先停止音频，再回退源码与 App；新版 runtime-state/2 不能交给旧控制器直接读取。备份原配置后，移走停止后的 `state.json`，让旧版本重新建立状态。不要覆盖或删除注册音频来处理运行元数据问题。
-
-更多排查与卸载步骤见 [README](../README.md)。
-
-首次模型加载可能包含上游 JIT 编译，耗时比后续启动更长；等待实际状态就绪再口述。
+- 模型不是统一的单一许可：REAL-TSE 作者自有源码与训练参数获 Apache-2.0 授权；WeSpeaker ECAPA 预训练参数按上游 CC BY 4.0 保留署名。完整声明见[模型声明](../licenses/MODEL_NOTICES.md)。
+- 已识别的 LGPL／MPL 原生组件源码与许可随包附带，见[原生运行库声明](../licenses/NATIVE_NOTICES.md)。
+- BlackHole 官方二进制依据另行集成授权分发，见[BlackHole 声明](../licenses/BLACKHOLE_NOTICES.md)。

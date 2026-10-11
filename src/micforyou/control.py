@@ -1,4 +1,4 @@
-"""Lifecycle control for the Stage-D background bridge.
+"""Lifecycle control for the background bridge.
 
 The controller stores metadata only.  It never stores audio, embeddings, or
 transcripts.  Every background bridge is its own process group so stop

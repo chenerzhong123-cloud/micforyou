@@ -350,7 +350,7 @@ def start_background(config: ProductConfig, args: argparse.Namespace) -> dict:
         log_path=log_path,
         health_path=health_path,
         cwd=config.project_root,
-        process_marker=str(config.project_root / "experiments" / "run_real_tse_bridge.py"),
+        process_marker=str(config.project_root / "tools" / "inference" / "run_real_tse_bridge.py"),
     )
     return state.to_dict()
 
@@ -452,7 +452,7 @@ def command_enroll(args: argparse.Namespace) -> None:
     subprocess.run(
         [
             str(config.runtime_python),
-            str(config.project_root / "experiments" / "export_real_tse_onnx.py"),
+            str(config.project_root / "tools" / "inference" / "export_real_tse_onnx.py"),
             *common,
             "--output", str(candidate_onnx),
             "--report", str(export_report),
@@ -463,7 +463,7 @@ def command_enroll(args: argparse.Namespace) -> None:
     subprocess.run(
         [
             str(config.runtime_python),
-            str(config.project_root / "experiments" / "compare_torch_onnx.py"),
+            str(config.project_root / "tools" / "inference" / "compare_torch_onnx.py"),
             *common,
             "--onnx", str(candidate_onnx),
             "--frames-per-chunk", str(config.frames_per_chunk),
@@ -568,7 +568,7 @@ def build_parser() -> argparse.ArgumentParser:
     recommend_parser.set_defaults(func=command_recommend_frames)
 
     configure = subparsers.add_parser(
-        "configure", help="save the Stage-D ONNX runtime configuration"
+        "configure", help="save the ONNX runtime configuration"
     )
     configure.add_argument("--config", type=Path, default=default_config_path())
     configure.add_argument("--input-device", required=True)

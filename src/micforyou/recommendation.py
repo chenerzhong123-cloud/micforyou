@@ -22,7 +22,7 @@ UNSUPPORTED = "unsupported"
 HOP_MS = 8.0
 ALGORITHMIC_LATENCY_MS = 24.0
 
-# SPEC.md AT-07 targets end-to-end p95 <= 500 ms. Everything after the bridge
+# The end-to-end latency target is p95 <= 500 ms. Everything after the bridge
 # write (CoreAudio output buffer, BlackHole driver, Doubao capture, decode and
 # UI) is not measured by this project, so the recommendation reserves headroom
 # for it before accepting a candidate.
@@ -32,7 +32,8 @@ CONSERVATIVE_EXTERNAL_RESERVE_MS = 100.0
 
 # RTF ceilings. RTF is measured over the complete 48->16->TSE->16->48 kHz path.
 # A margin below 1.0 keeps the worker thread from slowly falling behind under
-# normal desktop load, which the 2026-09-15 Mac A remeasure proved realistic.
+# normal desktop load, which remeasurement on the reference machine proved
+# realistic.
 FAST_MAX_RTF = 0.60
 BALANCED_MAX_RTF = 0.80
 CONSERVATIVE_MAX_RTF = 0.90
@@ -65,7 +66,7 @@ def estimate_core_latency_ms(
     *,
     algorithmic_latency_ms: float = ALGORITHMIC_LATENCY_MS,
 ) -> float:
-    """STFT wait + batch wait + p95 model call, matching docs/STAGE_C.md."""
+    """STFT wait + batch wait + p95 model call (the core-latency lower bound)."""
     return algorithmic_latency_ms + frames_per_chunk * HOP_MS + model_call_ms_p95
 
 
@@ -313,7 +314,7 @@ def recommend(
         "estimated core latency "
         f"{chosen.estimated_core_latency_ms:.1f} ms excludes unmeasured "
         "CoreAudio/BlackHole/Doubao time and queueing dynamics; confirm with "
-        "experiments/measure_bridge_latency.py before live use"
+        "tools/inference/measure_bridge_latency.py before live use"
     )
     reasons.append(
         "the live bridge still requires passing --frames-per-chunk explicitly; "

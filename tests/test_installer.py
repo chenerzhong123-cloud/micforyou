@@ -50,7 +50,7 @@ process.stdout.write(JSON.stringify(context.needsDriver()));'''
     ('11 /Applications/Path With Spaces/MicForYouMenuBar', '', '/', 1),
     ('11 /Applications/Path With Spaces/python3.12',
      '/Applications/Path With Spaces/python3.12 /app/micforyou/bootstrap.py setup-worker', '/', 1),
-    ('11 /env/bin/python3.12', '/env/bin/python3.12 /app/experiments/run_real_tse_bridge.py', '/', 1),
+    ('11 /env/bin/python3.12', '/env/bin/python3.12 /app/tools/inference/run_real_tse_bridge.py', '/', 1),
     ('11 /env/bin/python3.12', '/env/bin/python3.12 unrelated.py', '/', 0),
     ('', '', '/Volumes/Other', 1),
 ])

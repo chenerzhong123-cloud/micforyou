@@ -19,6 +19,8 @@ def main():
     parser.add_argument('--pkg', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='Fresh directory for extracted inspection data')
     parser.add_argument('--reuse', action='store_true', help='Reuse a previous extraction of this same package')
+    parser.add_argument('--checks-dir', type=Path, default=PROJECT / 'outputs/installer-build',
+                        help='Directory holding bundle-check and standalone-check built from app/MicForYouMenuBar/Checks')
     args = parser.parse_args()
     args.work.mkdir(parents=True, exist_ok=args.reuse)
     manifest = json.loads(args.pkg.with_suffix('.manifest.json').read_text())
@@ -66,7 +68,10 @@ def main():
     assert selected['app'] == 1
     (args.work / 'choices.xml').write_text(choices_text)
     for name, check in [('bundle-check', app), ('standalone-check', app)]:
-        run(PROJECT / 'outputs/installer-build' / name, check)
+        binary = args.checks_dir / name
+        if not binary.is_file():
+            raise SystemExit(f'Missing check binary: {binary}; build it from app/MicForYouMenuBar/Checks')
+        run(binary, check)
     run('codesign', '--verify', '--deep', '--strict', app)
     report = dict(manifest, result='PASS',
                   checks=['product checksum', 'official component byte identity', 'fixed /Applications install',

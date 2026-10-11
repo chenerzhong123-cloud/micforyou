@@ -7,6 +7,7 @@ __pycache__/
 # Real enrollment/test audio must stay local and outside version control.
 local-data/
 test-data/
+output/
 outputs/
 runs/
 /handoff/
@@ -14,6 +15,24 @@ runs/
 *.wav
 *.flac
 *.m4a
-tools/capture_kit/.capture-venv/
+# Personal model checkpoints never belong in the repository.
+*.pt
+*.pth
+
+# Secrets: env files (a secret-free .env.example may be committed), keys, certs.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+
+# Local automation scratch and editor state.
+.playwright-cli/
+.idea/
+.vscode/
+
 app/**/.build/
 app/**/.swiftpm/

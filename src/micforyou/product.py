@@ -1,4 +1,4 @@
-"""Persisted Stage-D configuration and command construction."""
+"""Persisted product configuration and command construction."""
 
 from __future__ import annotations
 
@@ -118,7 +118,7 @@ def required_paths(config: ProductConfig) -> dict[str, Path]:
     return {
         "runtime_python": config.runtime_python,
         "project_root": config.project_root,
-        "bridge_script": config.project_root / "experiments" / "run_real_tse_bridge.py",
+        "bridge_script": config.project_root / "tools" / "inference" / "run_real_tse_bridge.py",
         "model_repo": config.model_repo,
         "model_dir": config.model_dir,
         "checkpoint": config.model_dir / "avg_model.pt",
@@ -136,7 +136,7 @@ def build_bridge_command(
     config.validate()
     command = [
         str(config.runtime_python),
-        str(config.project_root / "experiments" / "run_real_tse_bridge.py"),
+        str(config.project_root / "tools" / "inference" / "run_real_tse_bridge.py"),
         "--repo",
         str(config.model_repo),
         "--model-dir",
