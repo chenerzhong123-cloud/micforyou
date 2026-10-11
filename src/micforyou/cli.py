@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from argparse import BooleanOptionalAction
 from dataclasses import replace
 from datetime import datetime
 import json
@@ -56,6 +57,38 @@ def write_json(value: Any, destination: Path | None) -> None:
 def timestamped_result(name: str) -> Path:
     stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
     return DEFAULT_WORK_DIR / "runs" / f"{stamp}-{name}.json"
+
+
+def command_uninstall(args: argparse.Namespace) -> None:
+    """Inventory, stop tasks, and hand deletion to the native executor."""
+    from . import uninstall
+    if args.plan_only:
+        plan = uninstall.build_plan(
+            remove_user_data=not args.keep_data,
+            remove_driver=args.remove_driver,
+            app_path=args.app_path,
+        )
+        write_json(plan, args.result)
+        return
+
+    uninstall.begin_uninstall_window()
+    try:
+        stopped = uninstall.stop_all_tasks(args.config)
+        plan = uninstall.build_plan(
+            remove_user_data=not args.keep_data,
+            remove_driver=args.remove_driver,
+            app_path=args.app_path,
+        )
+        cleanup = uninstall.execute_user_cleanup(plan)
+        payload = {"plan": plan, "stopped": stopped, "cleanup": cleanup,
+                   "marker_path": str(uninstall.uninstall_marker_path())}
+        if not stopped.get("all_stopped"):
+            uninstall.end_uninstall_window()
+            raise ValueError(f"未能停止全部任务，已中止卸载：{stopped}")
+        write_json(payload, args.result)
+    except Exception:
+        uninstall.end_uninstall_window()
+        raise
 
 
 def command_check_recording(args: argparse.Namespace) -> None:
@@ -373,6 +406,9 @@ def start_background(config: ProductConfig, args: argparse.Namespace) -> dict:
 
 
 def command_start(args: argparse.Namespace) -> None:
+    from .uninstall import uninstall_in_progress
+    if uninstall_in_progress(args.config.parent):
+        raise ValueError("MicForYou 正在卸载，不能开始过滤")
     from .setup import setup_status
     if setup_status(args.config)["status"] == "RUNNING":
         raise ValueError("声音设置正在进行，请等待完成或取消")
@@ -438,6 +474,9 @@ def command_run(args: argparse.Namespace) -> None:
 
 @configuration_command
 def command_enroll(args: argparse.Namespace) -> None:
+    from .uninstall import uninstall_in_progress
+    if uninstall_in_progress(args.config.parent):
+        raise ValueError("MicForYou 正在卸载，不能开始新的声音注册")
     require_inactive(args.config)
     config = load_config(args.config)
     source = resolve_device(list_devices(), config.input_device, "input")
@@ -575,6 +614,21 @@ def build_parser() -> argparse.ArgumentParser:
     score.add_argument("--target", type=Path)
     score.add_argument("--result", type=Path)
     score.set_defaults(func=command_score_output)
+
+    uninstall_parser = subparsers.add_parser(
+        "uninstall", help="plan or prepare a clean uninstallation"
+    )
+    uninstall_parser.add_argument("--config", type=Path, default=default_config_path())
+    uninstall_parser.add_argument("--plan-only", action="store_true",
+                                  help="only print the read-only inventory")
+    uninstall_parser.add_argument("--keep-data", action="store_true",
+                                  help="keep registrations, models, and reports")
+    uninstall_parser.add_argument("--remove-driver", action="store_true",
+                                  help="also remove the shared BlackHole 2ch driver (admin)")
+    uninstall_parser.add_argument("--app-path", type=Path,
+                                  default=Path("/Applications/MicForYou.app"))
+    uninstall_parser.add_argument("--result", type=Path)
+    uninstall_parser.set_defaults(func=command_uninstall)
 
     check = subparsers.add_parser(
         "check-recording", help="run the enrollment quality gate on a recording file"

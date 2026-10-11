@@ -43,10 +43,19 @@
 
 ## 卸载
 
+推荐使用 App 内的卸载入口：打开 MicForYou 的“设置”，点击底部**“卸载 MicForYou…”**。确认窗口会列出将删除与将保留的项目：
+
+- 默认删除应用本体、配置、注册录音、个人模型与运行报告；可勾选“保留声音注册与设置”以便重装后继续使用。
+- 默认**保留** BlackHole 2ch 共享驱动（其他音频软件可能在使用）；勾选移除时需要管理员授权并重启 Mac。
+- 卸载前请先把豆包或系统声音设置中的输入设备恢复为实体麦克风；应用移入废纸篓，清空废纸篓后才释放空间。
+
+App 无法启动时的手动卸载：
+
 1. 点击“结束”，退出菜单栏 App。
 2. 将 `/Applications/MicForYou.app`（以及旧 ZIP 遗留在 `~/Applications` 的副本）移入废纸篓。
 3. 在豆包输入法（或系统声音设置）中把输入设备恢复为日常麦克风。
-4. 配置与声音注册保存在 `~/Library/Application Support/MicForYou`，确认不再需要时可整体删除。BlackHole 驱动位于 `/Library/Audio/Plug-Ins/HAL`，如需移除请使用其官方卸载方式。
+4. 删除用户数据：`~/Library/Application Support/MicForYou`（配置、注册录音、个人模型、报告）与 `~/Library/Preferences/com.micforyou.menubar.plist`。
+5. BlackHole 驱动位于 `/Library/Audio/Plug-Ins/HAL/BlackHole2ch.driver`，如需移除请使用[官方卸载说明](https://github.com/ExistentialAudio/BlackHole/wiki/Uninstallation)并重启 Mac；注意该目录可能包含其他软件的驱动，不要整目录删除。
 
 ## 许可
 

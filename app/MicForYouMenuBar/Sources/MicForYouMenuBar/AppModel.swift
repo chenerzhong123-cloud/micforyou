@@ -11,6 +11,12 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var enrollmentSheet = false
     @Published var confirmCloseEnrollment = false
+    @Published var uninstallSheet = false
+    @Published var uninstallPlan: UninstallInventory?
+    @Published var uninstallKeepData = false
+    @Published var uninstallRemoveDriver = false
+    @Published var uninstallBusy = false
+    @Published var uninstallError: String?
     /// Worker token of the registration attempt this window session started
     /// or adopted; only its own READY may present as completed.
     @Published var enrollmentAttemptToken: String?
@@ -111,6 +117,60 @@ final class AppModel: ObservableObject {
         guard let client, client.isBundled else { return }
         if let job = try? await client.run(["setup-status"], as: SetupJob.self) {
             setupJob = job
+        }
+    }
+
+    // MARK: - Uninstall
+
+    func loadUninstallPlan() async {
+        guard let client else { return }
+        var arguments = ["uninstall", "--plan-only"]
+        if uninstallKeepData { arguments.append("--keep-data") }
+        if uninstallRemoveDriver { arguments.append("--remove-driver") }
+        do {
+            uninstallPlan = try await client.run(arguments, as: UninstallInventory.self)
+            uninstallError = nil
+        } catch {
+            uninstallError = error.localizedDescription
+        }
+    }
+
+    func performUninstall() async {
+        guard let client, !uninstallBusy else { return }
+        uninstallBusy = true
+        defer { uninstallBusy = false }
+        do {
+            // Stop tasks, delete current-user data, and write the executor plan.
+            let work = FileManager.default.temporaryDirectory
+                .appending(path: "micforyou-uninstall-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+            let planURL = work.appending(path: "plan.json")
+            var arguments = ["uninstall", "--result", planURL.path]
+            if uninstallKeepData { arguments.append("--keep-data") }
+            if uninstallRemoveDriver { arguments.append("--remove-driver") }
+            _ = try await client.run(arguments)
+
+            // Copy the native executor out of the app bundle so it survives
+            // the app's own deletion, then quit and let it take over.
+            guard let resources = Bundle.main.resourceURL else {
+                throw CLIError.executableMissing("App Resources")
+            }
+            let executorSource = resources.appending(path: "UninstallExecutor")
+            let executor = work.appending(path: "executor")
+            try FileManager.default.copyItem(at: executorSource, to: executor)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executor.path)
+
+            let process = Process()
+            process.executableURL = executor
+            process.arguments = ["--plan", planURL.path]
+            process.standardInput = FileHandle.nullDevice
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            process.qualityOfService = .userInitiated
+            try process.run()
+            NSApplication.shared.terminate(nil)
+        } catch {
+            uninstallError = error.localizedDescription
         }
     }
 

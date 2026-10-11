@@ -12,6 +12,11 @@ install -m 755 \
   "$contents/MacOS/MicForYouMenuBar"
 install -m 644 "$package_root/Resources/Info.plist" "$contents/Info.plist"
 
+# Native uninstall executor: standalone AppKit binary that survives the app's
+# own deletion and performs the verified cleanup after the app quits.
+swiftc -parse-as-library "$package_root/Uninstall/UninstallExecutor.swift" \
+  -o "$contents/Resources/UninstallExecutor"
+
 # C01 is the approved artwork. Derive every icon size from the same master.
 iconset="$package_root/.build/AppIcon.iconset"
 mkdir -p "$iconset"

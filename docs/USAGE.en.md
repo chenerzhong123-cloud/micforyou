@@ -61,6 +61,10 @@ MicForYou's audio preprocessing and enrollment happen on your Mac; it implements
 - **Selected microphone disconnects:** the app shows "正在恢复" (Recovering) and stays silent until recovery; it never switches to another microphone automatically. Unrecoverable faults show "已安全静音" (Safely muted) with a retry option.
 - **Faults while filtering:** default behavior is silence (privacy-first); an explicit pause is raw passthrough. The two states are distinct — a fault is never silently treated as a pause.
 
+## Uninstalling
+
+Choose "卸载 MicForYou…" at the bottom of Settings for a clean uninstall: the app and voice data are removed by default while the shared BlackHole driver is kept; you can also keep voice data for a reinstall. Details and manual steps are in the [installation guide](INSTALL.en.md#uninstalling).
+
 ## Known limitations
 
 - Filtering reduces some nearby speech but **cannot guarantee complete isolation**; when you are not speaking, other people's voices may still be transcribed. This is not an authentication or privacy-isolation tool.

@@ -123,6 +123,12 @@ struct SettingsView: View {
                 }
             }
 
+            HStack {
+                Spacer()
+                Button("卸载 MicForYou…") { model.uninstallSheet = true }
+                    .disabled(isActive || model.isWorking)
+            }
+
             Label {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("试用版本")
@@ -163,6 +169,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $model.enrollmentSheet) {
             EnrollmentSheet(model: model)
+        }
+        .sheet(isPresented: $model.uninstallSheet) {
+            UninstallSheet(model: model)
         }
     }
 

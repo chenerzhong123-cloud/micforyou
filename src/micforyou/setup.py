@@ -72,6 +72,9 @@ def setup_status(config_path: Path) -> dict:
 
 
 def start_setup(config_path: Path, input_device: str) -> dict:
+    from .uninstall import uninstall_in_progress
+    if uninstall_in_progress(config_path.parent):
+        raise ValueError("MicForYou 正在卸载，不能开始新的声音注册")
     root = bundle_root()
     from .cli import require_inactive
     with state_lock(job_path(config_path)):

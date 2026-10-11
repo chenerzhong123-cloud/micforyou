@@ -67,6 +67,11 @@ def main():
     selected = {choice['choiceIdentifier']: choice['choiceIsSelected'] for choice in flatten(choices)}
     assert selected['app'] == 1
     (args.work / 'choices.xml').write_text(choices_text)
+    executor = app / 'Contents/Resources/UninstallExecutor'
+    assert executor.is_file(), 'missing uninstall executor'
+    with executor.open('rb') as stream:
+        assert stream.read(4) in (b'\xcf\xfa\xed\xfe', b'\xca\xfe\xba\xbe'), 'executor not Mach-O'
+    run(executor, '--self-check')
     for name, check in [('bundle-check', app), ('standalone-check', app)]:
         binary = args.checks_dir / name
         if not binary.is_file():
@@ -79,6 +84,7 @@ def main():
                           'offline repair pkg hash/signature/notarization', 'App and driver signatures',
                           'no external symlinks or personal model/audio/cache files',
                           'Installer read-only choices query', 'C01 icon', 'Swift bundled CLI first-use status',
+                          'native uninstall executor present and self-checked',
                           'App signature intact after bundled execution'],
                   host_selected_choices=selected,
                   extracted_app=str(app.resolve()),

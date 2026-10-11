@@ -43,10 +43,19 @@ See the [usage guide](USAGE.en.md) for the semantics and limitations of daily op
 
 ## Uninstalling
 
+The preferred path is the in-app entry: open MicForYou's Settings and choose **"卸载 MicForYou…"** (Uninstall MicForYou) at the bottom. The confirmation window lists what will be deleted and kept:
+
+- By default the app itself, configuration, registration recordings, personal models, and reports are removed; you can keep the voice data for a later reinstall.
+- The shared BlackHole 2ch driver is **kept** by default (other audio software may use it); removing it requires administrator authorization and a Mac restart.
+- Restore your everyday microphone as the input method's input device before uninstalling; the app is moved to the Trash, and the space is freed only after the Trash is emptied.
+
+Manual uninstall when the app cannot launch:
+
 1. Choose "结束" (End) and quit the menu-bar app.
 2. Move `/Applications/MicForYou.app` (and any legacy ZIP copy in `~/Applications`) to the Trash.
 3. Restore your everyday microphone as the input device in Doubao IME (or system sound settings).
-4. Configuration and voice registrations live in `~/Library/Application Support/MicForYou`; delete the folder once you are sure you no longer need it. The BlackHole driver is at `/Library/Audio/Plug-Ins/HAL`; use its official uninstall method if you want to remove it.
+4. Delete user data: `~/Library/Application Support/MicForYou` (configuration, registrations, personal models, reports) and `~/Library/Preferences/com.micforyou.menubar.plist`.
+5. The BlackHole driver lives at `/Library/Audio/Plug-Ins/HAL/BlackHole2ch.driver`; to remove it follow the [official uninstall instructions](https://github.com/ExistentialAudio/BlackHole/wiki/Uninstallation) and restart your Mac. That folder may contain other software's drivers — never delete the whole folder.
 
 ## Licensing
 

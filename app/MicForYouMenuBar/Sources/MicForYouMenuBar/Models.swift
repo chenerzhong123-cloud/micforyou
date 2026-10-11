@@ -125,6 +125,37 @@ struct SetupJob: Decodable {
 /// flow state. A persisted READY only counts as this window's success when its
 /// worker token matches the attempt started (or adopted) in this window;
 /// otherwise the sheet shows a fresh preview so the user can register again.
+/// Read-only uninstall inventory rendered in the confirmation window.
+struct UninstallInventory: Decodable {
+    let targets: [String]
+    let keep: [String]
+
+    private struct Raw: Decodable {
+        struct Item: Decodable {
+            let kind: String
+            let reason: String?
+        }
+        let targets: [Item]
+        let keep: [Item]
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case rawTargets = "targets"
+        case rawKeep = "keep"
+    }
+
+    init(from decoder: Decoder) throws {
+        let raw = try Raw(from: decoder)
+        let labels = ["app": "应用本体（含内置模型与运行环境）",
+                      "old_app": "旧位置的应用副本",
+                      "support_dir": "声音注册、个人模型、配置与报告",
+                      "prefs": "应用偏好", "caches": "缓存",
+                      "saved_state": "窗口状态", "tmp_dir": "本机临时控制文件"]
+        self.targets = raw.targets.map { labels[$0.kind] ?? $0.kind }
+        self.keep = raw.keep.compactMap(\.reason)
+    }
+}
+
 enum EnrollmentFlow {
     enum State: Equatable {
         case idle, countdown, recording, checking, preparing, failed, done

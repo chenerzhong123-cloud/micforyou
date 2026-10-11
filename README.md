@@ -18,7 +18,7 @@ MicForYou 是一款 Mac 声音过滤工具。它以你注册的声音为参考�
 
 安装包约 443 MB，已包含 App、模型和音频组件。下载安装后，打开 MicForYou，选择麦克风并按 App 内提示朗读约 15 秒注册声音，再在豆包输入法中选择 **BlackHole 2ch** 即可开始使用。首次安装音频组件后，按提示重启 Mac。
 
-试用版本首次打开可能被 macOS 拦截，处理方法见[安装指南](docs/INSTALL.md)。
+试用版本首次打开可能被 macOS 拦截，处理方法见[安装指南](docs/INSTALL.md)。不再使用时可在 App“设置”中一键[干净卸载](docs/INSTALL.md#卸载)。
 
 [安装指南](docs/INSTALL.md) · [使用指南](docs/USAGE.md) · [开发指南](docs/DEVELOPMENT.md)
 

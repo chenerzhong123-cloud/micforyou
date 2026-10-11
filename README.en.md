@@ -18,7 +18,7 @@ MicForYou is a voice-filtering app for Mac. It uses your registered voice as a r
 
 The installer is about 443 MB and includes the app, model, and audio components. Install it, open MicForYou, choose your microphone, and follow the in-app prompt to read aloud for about 15 seconds to register your voice. Then select **BlackHole 2ch** in Doubao IME to start using it. Restart your Mac when prompted after the first audio-component installation.
 
-macOS may block this trial version on first use; see the [installation guide](docs/INSTALL.en.md) for instructions.
+macOS may block this trial version on first use; see the [installation guide](docs/INSTALL.en.md) for instructions. When you stop using it, Settings offers a built-in [clean uninstall](docs/INSTALL.en.md#uninstalling).
 
 [Installation guide](docs/INSTALL.en.md) · [Usage guide](docs/USAGE.en.md) · [Development guide](docs/DEVELOPMENT.en.md)
 

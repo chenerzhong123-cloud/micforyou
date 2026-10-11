@@ -138,6 +138,7 @@ print(json.dumps([{'name':d.metadata['Name'],'version':d.version,
         "model_sha256": WEIGHTS_HASH,
         "model_licenses": ["Apache-2.0 (Ke Zhang's portions)", "CC-BY-4.0 (WeSpeaker ECAPA parameters)"],
         "personal_data_included": False, "driver_included": bool(args.blackhole_pkg),
+        "uninstall_executor": True,
         "blackhole": {"version": BLACKHOLE_VERSION, "installer_sha256": BLACKHOLE_HASH,
                       "role": "official offline repair installer; system driver installed by product pkg",
                       "license_basis": "separate integration authorization confirmed by project owner 2026-10-09"}
