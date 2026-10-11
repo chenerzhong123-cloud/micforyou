@@ -79,8 +79,11 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
+                    if model.setupRunning && !model.enrollmentSheet {
+                        Button("查看注册进度…") { model.openEnrollment() }
+                    }
                     Button(model.status?.ready == true ? "重新注册…" : "注册我的声音…") {
-                        model.enrollmentSheet = true
+                        model.openEnrollment()
                     }
                     .disabled(isActive || model.isWorking || model.selectedInput.isEmpty ||
                               (model.isBundled ? !model.driverInstalled : model.status?.ready != true))

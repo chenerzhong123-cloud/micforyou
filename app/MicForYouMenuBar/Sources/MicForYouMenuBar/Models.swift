@@ -98,6 +98,7 @@ struct SetupJob: Decodable {
     // Structured setup state; absent in jobs written by older versions.
     let phase: String?
     let reason: String?
+    let token: String?
     let recording: RecordingProgress?
 
     struct RecordingProgress: Decodable {
@@ -116,6 +117,36 @@ struct SetupJob: Decodable {
                 return countdown - elapsedSeconds
             }
             return max(durationSeconds - elapsedSeconds, 0)
+        }
+    }
+}
+
+/// Pure mapping from the persisted setup job to the registration window's
+/// flow state. A persisted READY only counts as this window's success when its
+/// worker token matches the attempt started (or adopted) in this window;
+/// otherwise the sheet shows a fresh preview so the user can register again.
+enum EnrollmentFlow {
+    enum State: Equatable {
+        case idle, countdown, recording, checking, preparing, failed, done
+    }
+
+    static func state(job: SetupJob?, attemptToken: String?) -> State {
+        guard let job else { return .idle }
+        switch job.status {
+        case "RUNNING":
+            switch job.phase {
+            case "countdown": return .countdown
+            case "recording": return .recording
+            case "checking": return .checking
+            default: return .preparing
+            }
+        case "READY":
+            if let token = job.token, token == attemptToken { return .done }
+            return .idle
+        case "FAILED":
+            return .failed
+        default:
+            return .idle
         }
     }
 }

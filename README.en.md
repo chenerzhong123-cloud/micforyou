@@ -28,7 +28,7 @@ Use your everyday microphone in a quiet room. Speak at your usual volume and pac
 
 > At nine fifteen this morning, we will discuss our plans. I will organize my notes and check what needs to be done. Please write down the time and place. Once we are ready, we can begin.
 
-The app shows the same passage; you can also read another ordinary text. Keep reading naturally for about 15 seconds.
+The app shows this passage in Chinese; the English text above is a reference translation. You can also read another ordinary text — keep reading naturally for about 15 seconds.
 
 ## Performance requirements
 

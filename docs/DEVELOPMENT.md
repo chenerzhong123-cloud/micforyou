@@ -91,7 +91,13 @@ uv run micforyou record --input-device "$MFY_MIC" \
   --output-file "$MFY_VOICE" --duration 15 --countdown 3
 ```
 
-按 macOS 提示允许录音进程使用麦克风。然后导出个人 ONNX 并校验数值一致性：
+按 macOS 提示允许录音进程使用麦克风。先运行与 App 内相同的录音质量门槛（不合格不会进入导出）：
+
+```bash
+uv run micforyou check-recording --file "$MFY_VOICE" --window-seconds 6
+```
+
+然后导出个人 ONNX 并校验数值一致性：
 
 ```bash
 "$MFY_RUNTIME/bin/python" tools/inference/export_real_tse_onnx.py \

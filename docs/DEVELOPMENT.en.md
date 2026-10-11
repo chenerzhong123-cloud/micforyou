@@ -91,7 +91,13 @@ uv run micforyou record --input-device "$MFY_MIC" \
   --output-file "$MFY_VOICE" --duration 15 --countdown 3
 ```
 
-Allow microphone access when macOS asks. Then export your personal ONNX and verify numerical consistency:
+Allow microphone access when macOS asks. First run the same recording quality gate the app uses (failures never reach the export step):
+
+```bash
+uv run micforyou check-recording --file "$MFY_VOICE" --window-seconds 6
+```
+
+Then export your personal ONNX and verify numerical consistency:
 
 ```bash
 "$MFY_RUNTIME/bin/python" tools/inference/export_real_tse_onnx.py \

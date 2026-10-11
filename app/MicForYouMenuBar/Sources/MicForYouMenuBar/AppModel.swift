@@ -11,6 +11,9 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var enrollmentSheet = false
     @Published var confirmCloseEnrollment = false
+    /// Worker token of the registration attempt this window session started
+    /// or adopted; only its own READY may present as completed.
+    @Published var enrollmentAttemptToken: String?
     @Published var setupJob: SetupJob?
     @Published var driverInstalled = false
     var isBundled: Bool { client?.isBundled == true }
@@ -82,10 +85,24 @@ final class AppModel: ObservableObject {
         busy = true
         defer { busy = false }
         do {
-            setupJob = try await client.run(["setup-start", "--input-device", selectedInput],
-                                             as: SetupJob.self)
+            let job = try await client.run(["setup-start", "--input-device", selectedInput],
+                                           as: SetupJob.self)
+            setupJob = job
+            enrollmentAttemptToken = job.token
             errorMessage = nil
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Open the registration window. An ongoing job is adopted so reopening
+    /// shows its progress; a finished (possibly stale) job never blocks a new
+    /// attempt — the sheet starts from the preview state instead.
+    func openEnrollment() {
+        if setupJob?.status == "RUNNING" {
+            enrollmentAttemptToken = setupJob?.token
+        } else {
+            enrollmentAttemptToken = nil
+        }
+        enrollmentSheet = true
     }
 
     /// Fast setup-status polling while the registration sheet is visible; the

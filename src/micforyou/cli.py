@@ -58,6 +58,23 @@ def timestamped_result(name: str) -> Path:
     return DEFAULT_WORK_DIR / "runs" / f"{stamp}-{name}.json"
 
 
+def command_check_recording(args: argparse.Namespace) -> None:
+    """Run the same pre-export quality gate the app uses on a recording."""
+    import soundfile as sf
+    from .enrollment_quality import check_enrollment_audio
+    audio, rate = sf.read(args.file, dtype="float32", always_2d=True)
+    report = check_enrollment_audio(audio[:, 0], int(rate),
+                                    window_seconds=args.window_seconds)
+    payload = {"ok": report.ok, "reason": report.reason,
+               "message": report.message, **report.metrics}
+    if args.result:
+        write_json(payload, args.result)
+    else:
+        write_json(payload, None)
+    if not report.ok:
+        raise ValueError(f"录音质量未通过（{report.reason}）：{report.message}")
+
+
 def command_devices(args: argparse.Namespace) -> None:
     write_json([item.to_dict() for item in list_devices()], args.output)
 
@@ -558,6 +575,14 @@ def build_parser() -> argparse.ArgumentParser:
     score.add_argument("--target", type=Path)
     score.add_argument("--result", type=Path)
     score.set_defaults(func=command_score_output)
+
+    check = subparsers.add_parser(
+        "check-recording", help="run the enrollment quality gate on a recording file"
+    )
+    check.add_argument("--file", type=Path, required=True)
+    check.add_argument("--window-seconds", type=float, default=6.0)
+    check.add_argument("--result", type=Path)
+    check.set_defaults(func=command_check_recording)
 
     record = subparsers.add_parser("record", help="record a local enrollment/test sample")
     record.add_argument("--input-device", required=True)

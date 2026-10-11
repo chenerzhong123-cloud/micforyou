@@ -12,9 +12,9 @@ from micforyou.enrollment_quality import (
 RATE = 48000
 
 
-def speech(seconds: float, *, gain: float = 1.0, seed: int = 3) -> np.ndarray:
+def speech(seconds: float, *, gain: float = 1.0, seed: int = 3, rate: int = RATE) -> np.ndarray:
     rng = np.random.default_rng(seed)
-    t = np.arange(int(seconds * RATE)) / RATE
+    t = np.arange(int(seconds * rate)) / rate
     envelope = ((np.sin(2 * np.pi * 0.6 * t) > -0.2)
                 * (0.6 + 0.4 * np.sin(2 * np.pi * 3.1 * t)))
     voiced = np.zeros_like(t)
@@ -27,8 +27,8 @@ def speech(seconds: float, *, gain: float = 1.0, seed: int = 3) -> np.ndarray:
             + rng.normal(0, 3e-4, t.size)).astype(np.float32)
 
 
-def check(x: np.ndarray, **kwargs):
-    return check_enrollment_audio(x.astype(np.float32), RATE, **kwargs)
+def check(x: np.ndarray, rate: int = RATE, **kwargs):
+    return check_enrollment_audio(x.astype(np.float32), rate, **kwargs)
 
 
 def test_natural_reading_passes_and_reports_metrics():
@@ -107,8 +107,71 @@ def test_window_selection_targets_the_loudest_segment():
     values[6 * RATE : 12 * RATE] = speech(15, gain=1.0)[6 * RATE : 12 * RATE]
     report = check(values)
     assert report.ok
-    center = report.metrics["selected_start_seconds"] + 3.0
-    assert 6.0 <= center <= 12.0
+    # Selection is on the sample-exact 0.25 s grid, mirroring the runtime.
+    start = report.metrics["selected_start_seconds"]
+    assert start % 0.25 == pytest.approx(0.0, abs=1e-9)
+    assert 6.0 <= start + 3.0 <= 12.0
+
+
+def test_selection_matches_reference_argmax_rule():
+    # Pure-numpy restatement of runtime.select_enrollment_window's rule: the
+    # highest mean-square 6 s window on the sample_rate//4 stride grid. The
+    # controller test environment has no torch; equality with the model-side
+    # selection was verified against real export reports separately.
+    from micforyou.enrollment_quality import select_reference_window
+
+    values = speech(15)
+    start, length = select_reference_window(values, RATE, 6.0)
+    stride = RATE // 4
+    starts = np.arange(0, values.size - length + 1, stride)
+    cumulative = np.concatenate(([0.0], np.cumsum(np.square(values, dtype=np.float64))))
+    sums = cumulative[starts + length] - cumulative[starts]
+    assert start == int(starts[int(np.argmax(sums))])
+    assert length == int(round(RATE * 6.0))
+
+
+@pytest.mark.parametrize("rate", [16000, 44100, 48000])
+def test_gate_behaves_identically_across_sample_rates(rate):
+    assert check(speech(15, rate=rate), rate).ok
+    assert check(speech(15, gain=0.01, rate=rate), rate).reason == "too_quiet"
+    values = np.random.default_rng(5).normal(0, 0.05, 15 * rate)
+    assert check(values.astype(np.float32), rate).reason == "insufficient_speech"
+
+
+def test_localized_clipping_inside_reference_window_is_not_diluted():
+    values = speech(15)
+    values[int(5.0 * RATE) : int(5.21 * RATE)] = 1.0
+    report = check(values)
+    assert report.reason == "clipping"
+    # The whole-recording average stays below the limit; the window catches it.
+    assert report.metrics["clipped_frame_ratio"] <= 0.02
+    assert report.metrics["window_clipped_frame_ratio"] > 0.02
+
+
+def test_spectral_flatness_follows_speech_position():
+    # 6 s window: silence, then a 200 Hz tone for the last 3 s, placed at
+    # front/middle/back by varying where speech starts.
+    for voiced_start in (0.0, 1.5, 3.0):
+        total = 6 * RATE
+        values = np.zeros(total, dtype=np.float32)
+        t = np.arange(total) / RATE
+        tone = (0.1 * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
+        on = (t >= voiced_start) & (t < voiced_start + 3.0)
+        values[on] = tone[on]
+        from micforyou.enrollment_quality import _frame_rms, _map_speech_mask_to_fft, _window_spectral_flatness
+        mask = _frame_rms(values, RATE) > 0.001
+        flat = _window_spectral_flatness(values, RATE, 0, total, mask)
+        assert flat < 0.01, (voiced_start, flat)
+
+
+def test_flatness_ignores_silent_prefix_of_window():
+    values = np.zeros(6 * RATE, dtype=np.float32)
+    t = np.arange(3 * RATE) / RATE
+    values[3 * RATE:] = (0.1 * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
+    from micforyou.enrollment_quality import _frame_rms, _window_spectral_flatness
+    mask = _frame_rms(values, RATE) > 0.001
+    masked = _window_spectral_flatness(values, RATE, 0, 6 * RATE, mask)
+    assert masked < 0.01  # aligned mask must measure the voiced half, not 1.0
 
 
 def test_error_carries_reason_and_metrics():
@@ -129,11 +192,13 @@ def test_record_input_reports_real_progress_phases(monkeypatch, tmp_path):
         def rec(frames, samplerate, channels, dtype, device, out, blocking):
             assert blocking is False
             filled["started"] = True
+            # Fill the buffer like real capture; asserting on uninitialized
+            # memory would validate garbage, not recording results.
+            out[:] = 0.05
 
         @staticmethod
         def wait():
-            out = events  # noqa: F841 - only proves the API shape is used
-            del out
+            pass
 
     monkeypatch.setattr(audio_module, "sd", FakeSD)
     result = record_input(

@@ -15,24 +15,10 @@ struct EnrollmentSheet: View {
 
     private var job: SetupJob? { model.setupJob }
 
-    private enum FlowState {
-        case idle, countdown, recording, checking, preparing, failed, done
-    }
+    private typealias FlowState = EnrollmentFlow.State
 
     private var state: FlowState {
-        guard let job else { return .idle }
-        switch job.status {
-        case "RUNNING":
-            switch job.phase {
-            case "countdown": return .countdown
-            case "recording": return .recording
-            case "checking": return .checking
-            default: return .preparing
-            }
-        case "READY": return .done
-        case "FAILED": return .failed
-        default: return .idle
-        }
+        EnrollmentFlow.state(job: job, attemptToken: model.enrollmentAttemptToken)
     }
 
     var body: some View {
@@ -123,9 +109,15 @@ struct EnrollmentSheet: View {
                 cancelButton
 
             case .preparing:
-                HStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text(job?.stage ?? "正在为你的声音准备模型，请稍候…")
+                VStack(spacing: 8) {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text(job?.stage ?? "正在为你的声音准备模型，请稍候…")
+                    }
+                    // Keep the stop-reading notice visible here too: the
+                    // checking phase can be shorter than one poll interval.
+                    Text("录音完成，可以停止朗读。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 Button("后台继续") { dismiss() }
