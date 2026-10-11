@@ -441,6 +441,14 @@ def command_enroll(args: argparse.Namespace) -> None:
         record_input(source, candidate_audio, args.duration, args.countdown),
         candidate_audio.with_suffix(".json"),
     )
+    print("Checking the recording before any model export...", flush=True)
+    import soundfile as sf
+    from .enrollment_quality import check_enrollment_audio
+    captured, capture_rate = sf.read(candidate_audio, dtype="float32", always_2d=True)
+    quality = check_enrollment_audio(captured[:, 0], int(capture_rate),
+                                     window_seconds=config.enrollment_seconds)
+    if not quality.ok:
+        raise ValueError(f"录音质量未通过（{quality.reason}）：{quality.message}")
     export_report = timestamped_result("enrollment-onnx-export")
     correctness_report = timestamped_result("enrollment-onnx-correctness")
     common = [
@@ -648,7 +656,13 @@ def build_parser() -> argparse.ArgumentParser:
     stop.add_argument("--timeout", type=float, default=15.0)
     stop.set_defaults(func=command_stop)
 
-    from .setup import start_setup, setup_status, cancel_setup, run_worker
+    from .setup import (
+        REGISTRATION_SECONDS,
+        cancel_setup,
+        run_worker,
+        setup_status,
+        start_setup,
+    )
     for name, handler in (("setup-start", start_setup), ("setup-status", setup_status),
                           ("setup-cancel", cancel_setup)):
         action = subparsers.add_parser(name)
@@ -668,7 +682,7 @@ def build_parser() -> argparse.ArgumentParser:
         "enroll", help="record and validate a replacement enrollment"
     )
     enroll.add_argument("--config", type=Path, default=default_config_path())
-    enroll.add_argument("--duration", type=float, default=45.0)
+    enroll.add_argument("--duration", type=float, default=REGISTRATION_SECONDS)
     enroll.add_argument("--countdown", type=float, default=3.0)
     enroll.set_defaults(func=command_enroll)
 

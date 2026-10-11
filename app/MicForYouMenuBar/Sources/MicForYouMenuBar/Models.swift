@@ -95,6 +95,29 @@ struct SetupJob: Decodable {
     let status: String
     let stage: String
     let progress: Double
+    // Structured setup state; absent in jobs written by older versions.
+    let phase: String?
+    let reason: String?
+    let recording: RecordingProgress?
+
+    struct RecordingProgress: Decodable {
+        let durationSeconds: Double
+        let countdownSeconds: Double?
+        let elapsedSeconds: Double
+
+        enum CodingKeys: String, CodingKey {
+            case durationSeconds = "duration_seconds"
+            case countdownSeconds = "countdown_seconds"
+            case elapsedSeconds = "elapsed_seconds"
+        }
+
+        var remainingSeconds: Double {
+            if let countdown = countdownSeconds, elapsedSeconds < countdown {
+                return countdown - elapsedSeconds
+            }
+            return max(durationSeconds - elapsedSeconds, 0)
+        }
+    }
 }
 
 enum StatusAppearance: Equatable {

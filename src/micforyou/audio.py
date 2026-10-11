@@ -314,21 +314,47 @@ def record_input(
     output_path: Path,
     duration: float,
     countdown: float = 3.0,
+    on_progress=None,
 ) -> dict[str, Any]:
+    """Record a fixed-length mono capture after an optional countdown.
+
+    ``on_progress(phase, elapsed_seconds, total_seconds)`` is an optional
+    observer notified about twice per second while waiting and recording, so
+    callers can surface real timing instead of guessing from a click moment.
+    ``phase`` is ``"countdown"`` or ``"recording"``.
+    """
     if BLACKHOLE_NAME.casefold() in input_device.name.casefold():
         raise ValueError("recording requires a physical input, not BlackHole")
     if countdown > 0:
-        sd.sleep(round(countdown * 1000))
+        deadline = time.monotonic() + countdown
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            if on_progress is not None:
+                on_progress("countdown", countdown - remaining, countdown)
+            time.sleep(min(0.25, remaining))
     sample_rate = int(input_device.default_samplerate)
     frames = round(duration * sample_rate)
-    audio = sd.rec(
+    audio = np.empty((frames, 1), dtype="float32")
+    sd.rec(
         frames,
         samplerate=sample_rate,
         channels=1,
         dtype="float32",
         device=input_device.index,
-        blocking=True,
+        out=audio,
+        blocking=False,
     )
+    started = time.monotonic()
+    while True:
+        captured = min((time.monotonic() - started) * sample_rate, frames)
+        if captured >= frames:
+            break
+        if on_progress is not None:
+            on_progress("recording", captured / sample_rate, duration)
+        time.sleep(0.25)
+    sd.wait()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(output_path, audio, sample_rate, subtype="FLOAT")
     absolute = np.abs(audio)

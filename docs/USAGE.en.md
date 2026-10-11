@@ -55,6 +55,7 @@ MicForYou's audio preprocessing and enrollment happen on your Mac; it implements
 ## Troubleshooting
 
 - **"需要完成设置" (Setup required):** check the driver, microphone, and registration progress in Settings; source users can also run `uv run micforyou status`.
+- **Registration reports a recording problem** (too quiet, distorted, or not enough effective speech): follow the hint — keep a comfortable distance from the microphone, do not lower your voice, and read naturally and continuously for about 15 seconds before retrying. A failed check never affects the saved registration.
 - **No text appears:** confirm the state is ready, Doubao selected `BlackHole 2ch`, and macOS microphone permission was granted to the actual recording process.
 - **"Microphone still in use":** pause and quitting the interface both keep audio running; click "结束" (End) first, or run `uv run micforyou stop`.
 - **Selected microphone disconnects:** the app shows "正在恢复" (Recovering) and stays silent until recovery; it never switches to another microphone automatically. Unrecoverable faults show "已安全静音" (Safely muted) with a retry option.

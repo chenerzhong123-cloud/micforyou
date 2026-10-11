@@ -16,21 +16,19 @@ MicForYou is a voice-filtering app for Mac. It uses your registered voice as a r
 
 **[Download MicForYou 0.2.2 trial version (Mac installer)](https://github.com/chenerzhong123-cloud/micforyou/releases/download/v0.2.2-trial/MicForYou-0.2.2-trial-macos-arm64.pkg)** · [Release notes and checksum](https://github.com/chenerzhong123-cloud/micforyou/releases/tag/v0.2.2-trial)
 
-The installer is about 443 MB and includes the app, model, and audio components. Install it, open MicForYou, choose your microphone, and register your voice for 45 seconds. Then select **BlackHole 2ch** in Doubao IME to start using it. Restart your Mac when prompted after the first audio-component installation.
+The installer is about 443 MB and includes the app, model, and audio components. Install it, open MicForYou, choose your microphone, and follow the in-app prompt to read aloud for about 15 seconds to register your voice. Then select **BlackHole 2ch** in Doubao IME to start using it. Restart your Mac when prompted after the first audio-component installation.
 
 macOS may block this trial version on first use; see the [installation guide](docs/INSTALL.en.md) for instructions.
 
 [Installation guide](docs/INSTALL.en.md) · [Usage guide](docs/USAGE.en.md) · [Development guide](docs/DEVELOPMENT.en.md)
 
-## A reading passage for 45-second voice registration
+## Voice registration: a reading passage
 
-Use your everyday microphone in a quiet room. Speak at your usual volume and pace, with natural pauses. After choosing "注册我的声音" (Register my voice), wait for the 3-second countdown to finish before speaking. You can use the passage below or read another ordinary text. **If you finish early, start again and keep reading until the 45-second recording ends.** There is no need to rush or change your voice.
+Use your everyday microphone in a quiet room. Speak at your usual volume and pace, with natural pauses. After choosing "注册我的声音" (Register my voice), a reading window appears; wait for the 3-second countdown to finish before speaking. **If you finish early, start again from the beginning and keep going until you see "录音完成" (recording finished).** There is no need to rush or change your voice. When recording ends the app checks the recording automatically; if it does not pass, the reason is shown and you can record again. After it passes, model preparation starts automatically.
 
-> This morning, I opened the window and saw sunlight across my desk. The leaves outside moved gently in the breeze. I poured a glass of water and got ready for the day.
->
-> First, I will organize my notes and write down a few questions for our afternoon meeting. Before it starts, I will check my microphone and take a moment to think.
->
-> When work is finished, I would like to go for a short walk and buy some fruit and bread. On my way home, I might call a friend and talk about a book we have been reading. These are everyday things, and I can describe them in my usual voice.
+> At nine fifteen this morning, we will discuss our plans. I will organize my notes and check what needs to be done. Please write down the time and place. Once we are ready, we can begin.
+
+The app shows the same passage; you can also read another ordinary text. Keep reading naturally for about 15 seconds.
 
 ## Performance requirements
 

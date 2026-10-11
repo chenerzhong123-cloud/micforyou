@@ -108,10 +108,12 @@ def test_cancel_does_not_signal_reused_pid(tmp_path, monkeypatch):
     cancel_setup(config)
 
 
-@pytest.mark.parametrize("failure", ["performance", "cancel", "latency", "retry", None])
+@pytest.mark.parametrize("failure", ["performance", "cancel", "latency", "retry", "quality", None])
 def test_setup_transaction_preserves_previous_registration_until_all_checks_pass(
         tmp_path, monkeypatch, failure):
     import os
+    import numpy as np
+    import soundfile as sf
     from micforyou import setup
     from micforyou.audio import Device
     bundle = tmp_path / "Bundle/Runtime"
@@ -136,10 +138,31 @@ def test_setup_transaction_preserves_previous_registration_until_all_checks_pass
                Device(1, "BlackHole 2ch", 0, 2, 2, 48000)]
     monkeypatch.setattr(setup, "list_devices", lambda: devices)
 
-    def record(device, destination, *args):
-        destination.write_bytes(b"new voice")
+    def synthetic_speech(seconds: float, rate: int = 48000) -> np.ndarray:
+        # Harmonic stack with pauses: passes the enrollment quality gate the
+        # same way continuous natural reading does.
+        rng = np.random.default_rng(3)
+        t = np.arange(int(seconds * rate)) / rate
+        envelope = ((np.sin(2 * np.pi * 0.6 * t) > -0.2)
+                    * (0.6 + 0.4 * np.sin(2 * np.pi * 3.1 * t)))
+        voiced = np.zeros_like(t)
+        for k in range(1, 22):
+            if 140 * k > 3400:
+                break
+            voiced += np.sin(2 * np.pi * 140 * k * t + 0.3 * k) / k
+        voiced /= np.max(np.abs(voiced))
+        return (0.15 * envelope * voiced
+                + rng.normal(0, 3e-4, t.size)).astype(np.float32)
+
+    def record(device, destination, *args, **kwargs):
+        if failure == "quality":
+            sf.write(destination, np.zeros(int(15 * 48000), dtype=np.float32), 48000)
+        else:
+            sf.write(destination, synthetic_speech(15), 48000)
         if failure == "cancel":
             raise InterruptedError("cancel")
+        if kwargs.get("on_progress") is not None and failure is None:
+            kwargs["on_progress"]("recording", 1.0, 15.0)
     monkeypatch.setattr(setup, "record_input", record)
 
     latency_attempts = []
@@ -167,15 +190,24 @@ def test_setup_transaction_preserves_previous_registration_until_all_checks_pass
     if failure in {"performance", "latency"}:
         with pytest.raises(ValueError):
             setup.run_worker(config_path, "Mic", token)
+    elif failure == "quality":
+        from micforyou.enrollment_quality import EnrollmentQualityError
+        with pytest.raises(EnrollmentQualityError):
+            setup.run_worker(config_path, "Mic", token)
     else:
         setup.run_worker(config_path, "Mic", token)
-    if failure in {"performance", "cancel", "latency"}:
+    if failure in {"performance", "cancel", "latency", "quality"}:
         assert config_path.read_bytes() == original
         assert not (config_path.parent / "registrations" / token).exists()
-        assert setup.read_job(config_path)["status"] == ("CANCELLED" if failure == "cancel" else "FAILED")
+        job = setup.read_job(config_path)
+        assert job["status"] == ("CANCELLED" if failure == "cancel" else "FAILED")
+        if failure == "quality":
+            assert job["reason"] == "too_quiet"
+            assert "没有录到足够清楚的声音" in job["stage"]
     else:
         updated = load_config(config_path)
-        assert updated.bundle_managed and updated.enrollment.read_bytes() == b"new voice"
+        assert updated.bundle_managed
+        assert updated.enrollment.read_bytes().startswith(b"RIFF")  # real capture kept
         assert updated.prefill_ms == (150 if failure == "retry" else 100)
         assert setup.read_job(config_path)["status"] == "READY"
     if failure == "retry":

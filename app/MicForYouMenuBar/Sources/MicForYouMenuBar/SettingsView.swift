@@ -80,7 +80,7 @@ struct SettingsView: View {
                     }
                     Spacer()
                     Button(model.status?.ready == true ? "重新注册…" : "注册我的声音…") {
-                        model.confirmEnrollment = true
+                        model.enrollmentSheet = true
                     }
                     .disabled(isActive || model.isWorking || model.selectedInput.isEmpty ||
                               (model.isBundled ? !model.driverInstalled : model.status?.ready != true))
@@ -91,11 +91,18 @@ struct SettingsView: View {
             if let job = model.setupJob {
                 VStack(alignment: .leading, spacing: 8) {
                     if model.setupRunning {
-                        ProgressView(value: job.progress)
+                        if job.phase == "recording", let recording = job.recording {
+                            ProgressView(value: min(recording.elapsedSeconds / recording.durationSeconds, 1))
+                        } else {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
                         HStack {
                             Text(job.stage).font(.caption)
                             Spacer()
-                            Button("取消设置") { Task { await model.cancelSetup() } }
+                            if !model.enrollmentSheet {
+                                Button("取消设置") { Task { await model.cancelSetup() } }
+                            }
                         }
                     } else if job.status != "IDLE" {
                         Text(job.stage).font(.caption)
@@ -151,13 +158,8 @@ struct SettingsView: View {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
-        .alert("注册你的声音", isPresented: $model.confirmEnrollment) {
-            Button("取消", role: .cancel) {}
-            Button("开始 45 秒录音") {
-                Task { await model.enrollVoice() }
-            }
-        } message: {
-            Text("请使用当前日常麦克风，在安静环境自然朗读。检查通过后才会替换现有注册；失败不会覆盖旧版本。")
+        .sheet(isPresented: $model.enrollmentSheet) {
+            EnrollmentSheet(model: model)
         }
     }
 

@@ -9,7 +9,8 @@ final class AppModel: ObservableObject {
     @Published var selectedInput = ""
     @Published var busy = false
     @Published var errorMessage: String?
-    @Published var confirmEnrollment = false
+    @Published var enrollmentSheet = false
+    @Published var confirmCloseEnrollment = false
     @Published var setupJob: SetupJob?
     @Published var driverInstalled = false
     var isBundled: Bool { client?.isBundled == true }
@@ -85,6 +86,15 @@ final class AppModel: ObservableObject {
                                              as: SetupJob.self)
             errorMessage = nil
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    /// Fast setup-status polling while the registration sheet is visible; the
+    /// 3-second countdown needs sub-second updates from real backend timing.
+    func refreshSetup() async {
+        guard let client, client.isBundled else { return }
+        if let job = try? await client.run(["setup-status"], as: SetupJob.self) {
+            setupJob = job
+        }
     }
 
     func cancelSetup() async {

@@ -28,7 +28,7 @@ The complete installer (`.pkg`) bundles the menu-bar app, an arm64 Python runtim
 1. Open MicForYou from Applications and go to Settings.
 2. Select the microphone you use daily.
 3. Click "注册我的声音" (Register my voice) and allow MicForYou to use the microphone when macOS asks.
-4. Read naturally for 45 seconds in a quiet room (a 3-second countdown precedes recording). The app then automatically exports your personal model, verifies numerical consistency, and benchmarks this Mac; progress is shown in the Settings window.
+4. The reading window shows a passage of about 15 seconds: read it in a quiet room at your usual volume and pace (a 3-second countdown precedes recording; if you finish early, start again from the beginning). When recording ends the app checks the recording automatically, shows the reason and lets you retry if it fails, then automatically exports your personal model, verifies numerical consistency, and benchmarks this Mac; progress is shown in the registration window.
 5. Registration can be cancelled; failed attempts can be retried and never replace an existing registration. Performance gates: an eligible candidate with RTF ≤ 0.80, simulated internal audio-path latency p95 < 400 ms, and no faults or audio underruns. The check does not include Doubao recognition time.
 6. After registration succeeds, select **BlackHole 2ch** as the input device in Doubao IME, click "开始过滤" (Start filtering) in MicForYou, and wait for the "正在过滤" (Filtering) state before dictating.
 

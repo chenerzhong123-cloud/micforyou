@@ -82,13 +82,13 @@ test -f "$MFY_MODEL/config.yaml"
 
 ## 4．注册、导出与校验
 
-先找出日常麦克风的准确名称并录制 45 秒声音（安静环境、自然语速、日常麦克风；不要用他人的声音）：
+先找出日常麦克风的准确名称并录制约 15 秒声音（安静环境、自然语速、日常麦克风、持续自然朗读；不要用他人的声音）。录音会先经过质量门槛（音量、削波与有效语音检查），不合格不会进入导出：
 
 ```bash
 uv run micforyou devices
 MFY_MIC="你的日常实体麦克风名称"
 uv run micforyou record --input-device "$MFY_MIC" \
-  --output-file "$MFY_VOICE" --duration 45 --countdown 3
+  --output-file "$MFY_VOICE" --duration 15 --countdown 3
 ```
 
 按 macOS 提示允许录音进程使用麦克风。然后导出个人 ONNX 并校验数值一致性：

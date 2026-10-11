@@ -82,13 +82,13 @@ The model licensing is split: the REAL-TSE author-owned source and trained param
 
 ## 4. Enrollment, export, and correctness
 
-Find the exact name of your everyday microphone and record 45 seconds of your own voice (quiet room, natural pace, everyday microphone; never someone else's voice):
+Find the exact name of your everyday microphone and record about 15 seconds of your own voice (quiet room, natural pace, everyday microphone, continuous natural reading; never someone else's voice). The recording passes a quality gate (level, clipping, effective-speech checks) before any export runs:
 
 ```bash
 uv run micforyou devices
 MFY_MIC="your-everyday-microphone-name"
 uv run micforyou record --input-device "$MFY_MIC" \
-  --output-file "$MFY_VOICE" --duration 45 --countdown 3
+  --output-file "$MFY_VOICE" --duration 15 --countdown 3
 ```
 
 Allow microphone access when macOS asks. Then export your personal ONNX and verify numerical consistency:
