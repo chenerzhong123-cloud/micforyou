@@ -113,20 +113,14 @@ def test_window_selection_targets_the_loudest_segment():
     assert 6.0 <= start + 3.0 <= 12.0
 
 
-def test_selection_matches_reference_argmax_rule():
-    # Pure-numpy restatement of runtime.select_enrollment_window's rule: the
-    # highest mean-square 6 s window on the sample_rate//4 stride grid. The
-    # controller test environment has no torch; equality with the model-side
-    # selection was verified against real export reports separately.
+def test_selection_matches_actual_model_reference():
     from micforyou.enrollment_quality import select_reference_window
-
+    from micforyou.runtime import prepare_enrollment_reference
     values = speech(15)
     start, length = select_reference_window(values, RATE, 6.0)
-    stride = RATE // 4
-    starts = np.arange(0, values.size - length + 1, stride)
-    cumulative = np.concatenate(([0.0], np.cumsum(np.square(values, dtype=np.float64))))
-    sums = cumulative[starts + length] - cumulative[starts]
-    assert start == int(starts[int(np.argmax(sums))])
+    reference = prepare_enrollment_reference(values, RATE, 6.0)
+    assert start == reference.selection["source_start_samples"]
+    assert length == reference.selection["source_end_samples"] - start
     assert length == int(round(RATE * 6.0))
 
 

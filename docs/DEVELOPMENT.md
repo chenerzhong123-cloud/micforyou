@@ -35,7 +35,7 @@ brew install uv   # 或按 uv 官方说明安装
 ```bash
 git clone https://github.com/chenerzhong123-cloud/micforyou.git
 cd micforyou
-uv sync --extra dev
+uv sync --extra dev --extra model
 ```
 
 以下步骤都在项目目录执行。重新打开 Terminal 时需重设下文的 `MFY_*` 变量；不要删掉项目 `.venv` 或移动配置引用的源码目录。

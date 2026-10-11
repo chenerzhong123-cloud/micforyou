@@ -34,7 +34,7 @@ import torchaudio
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from micforyou.reporting import collect_system_info
-from micforyou.runtime import ort_thread_settings, select_enrollment_window
+from micforyou.runtime import ort_thread_settings
 from micforyou.synth import DEFAULT_SEED, synthetic_blocks
 
 from probe_real_tse_stateful import (
@@ -257,13 +257,10 @@ def main() -> None:
     enrollment, enrollment_rate = torchaudio.load(args.enrollment)
     if enrollment.shape[0] > 1:
         enrollment = enrollment.mean(dim=0, keepdim=True)
-    if enrollment_rate != extractor.resample_rate:
-        enrollment = torchaudio.functional.resample(
-            enrollment, enrollment_rate, extractor.resample_rate
-        )
-    enrollment, enrollment_selection = select_enrollment_window(
-        enrollment, int(extractor.resample_rate), args.enrollment_seconds
-    )
+    from micforyou.runtime import prepare_enrollment_reference
+    reference = prepare_enrollment_reference(
+        enrollment, enrollment_rate, args.enrollment_seconds, int(extractor.resample_rate))
+    enrollment, enrollment_selection = reference.selected, reference.selection
     with torch.inference_mode():
         conditioning = precompute_conditioning(model, enrollment)
     layer_count = len(model.sep_model.separator.separation)

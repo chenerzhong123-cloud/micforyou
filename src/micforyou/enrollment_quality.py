@@ -5,13 +5,9 @@ enrollment: it checks level, clipping, and whether the recording contains a
 usable speech-dense reference window. It does not judge text content and makes
 no claim about later filtering quality.
 
-Coordinate contract: the reference window is selected with the exact rule of
-``micforyou.runtime.select_enrollment_window`` — a ``window_seconds`` span on a
-``sample_rate // 4`` (0.25 s) stride grid over sample-exact offsets, at the
-capture's native rate. The model performs the same selection after resampling
-to 16 kHz; on the authorized verification recordings both paths pick the same
-grid cell. Both the whole recording and the selected window are checked, so a
-locally bad segment cannot be diluted by an otherwise fine average.
+Coordinate contract: capture is resampled to the model's 16 kHz using the
+shared runtime preparation path before selection. Model metrics use the exact
+selected input; distortion is also checked in the corresponding source span.
 """
 from __future__ import annotations
 
@@ -61,25 +57,13 @@ class EnrollmentQualityReport:
     metrics: dict
 
 
-def select_reference_window(
-    values: np.ndarray, sample_rate: int, window_seconds: float
-) -> tuple[int, int]:
-    """Sample-exact mirror of runtime.select_enrollment_window's argmax.
-
-    Highest mean-square window of ``window_seconds`` on the 0.25 s stride grid
-    (``sample_rate // 4`` samples), evaluated at the capture's native rate so
-    the reported coordinates are directly traceable to the source samples.
-    """
-    window = max(1, int(round(sample_rate * window_seconds)))
-    total = int(values.size)
-    if total <= window:
-        return 0, total
-    stride = max(1, sample_rate // 4)
-    starts = np.arange(0, total - window + 1, stride)
-    cumulative = np.concatenate(([0.0], np.cumsum(np.square(values, dtype=np.float64))))
-    sums = cumulative[starts + window] - cumulative[starts]
-    start = int(starts[int(np.argmax(sums))])
-    return start, window
+def select_reference_window(values: np.ndarray, sample_rate: int,
+                            window_seconds: float) -> tuple[int, int]:
+    """Source coordinates of the actual model reference (compatibility helper)."""
+    from .runtime import prepare_enrollment_reference
+    metadata = prepare_enrollment_reference(values, sample_rate, window_seconds).selection
+    start, end = metadata["source_start_samples"], metadata["source_end_samples"]
+    return start, end - start
 
 
 def _frame_rms(values: np.ndarray, sample_rate: int) -> np.ndarray:
@@ -158,9 +142,9 @@ def check_enrollment_audio(
     """Judge a candidate enrollment recording before any model export.
 
     ``audio`` is the mono float capture at its native rate. The selected
-    reference window uses the runtime's deterministic highest-RMS rule, and
-    both the whole recording and that exact window must pass level, clipping,
-    and speech-sufficiency checks.
+    reference is selected after the runtime's exact 16k conversion. Level and
+    speech metrics use that model input; clipping is also checked over the
+    whole source recording and the corresponding source reference span.
     """
     values = np.asarray(audio, dtype=np.float32).reshape(-1)
     if sample_rate <= 0:
@@ -174,18 +158,23 @@ def check_enrollment_audio(
     peak = float(np.max(absolute))
     duration = values.size / sample_rate
 
-    start, window_length = select_reference_window(values, sample_rate, window_seconds)
+    from .runtime import prepare_enrollment_reference
+    reference = prepare_enrollment_reference(values, sample_rate, window_seconds)
+    selection = reference.selection
+    source_start, source_end = selection["source_start_samples"], selection["source_end_samples"]
+    model_values = reference.model_audio.numpy().reshape(-1)
+    model_segment = reference.selected.numpy().reshape(-1)
+    model_rate = selection["model_sample_rate"]
+    start, window_length = selection["selected_start_samples"], model_segment.size
 
     clipped = _clipped_frame_mask(values, sample_rate)
-    window_frame = max(1, int(round(sample_rate * FRAME_SECONDS)))
+    window_clipped_ratio = float(np.mean(_clipped_frame_mask(values[source_start:source_end], sample_rate)))
+    model_clipped_ratio = float(np.mean(_clipped_frame_mask(model_segment, model_rate)))
+    rms_frames = _frame_rms(model_values, model_rate)
+    window_frame = max(1, int(round(model_rate * FRAME_SECONDS)))
     window_first = start // window_frame
     window_last = max(window_first + 1, (start + window_length + window_frame - 1) // window_frame)
-    window_clipped_ratio = float(np.mean(clipped[window_first:window_last]))
-
-    rms_frames = _frame_rms(values, sample_rate)
-    window_rms = float(
-        np.sqrt(np.mean(np.square(rms_frames[window_first:window_last], dtype=np.float64)))
-    )
+    window_rms = float(np.sqrt(np.mean(np.square(model_segment, dtype=np.float64))))
 
     def fail(reason: str, message: str) -> EnrollmentQualityReport:
         return EnrollmentQualityReport(False, reason, message, metrics)
@@ -197,17 +186,15 @@ def check_enrollment_audio(
         "clipped_frame_ratio": float(np.mean(clipped)),
         "window_clipped_frame_ratio": window_clipped_ratio,
         "window_seconds_requested": window_seconds,
-        "selected_start_seconds": start / sample_rate,
-        "selected_seconds": window_length / sample_rate,
-        "selection_stride_seconds": (max(1, sample_rate // 4)) / sample_rate,
-        "selected_start_samples": start,
+        **selection,
+        "model_window_clipped_frame_ratio": model_clipped_ratio,
         "sample_rate": sample_rate,
         "window_rms": window_rms,
     }
 
     # Clipping is judged on the window the model will consume first, then on
     # the recording as a whole; either being sustained distortion fails.
-    if window_clipped_ratio > CLIPPED_FRAME_LIMIT or metrics["clipped_frame_ratio"] > CLIPPED_FRAME_LIMIT:
+    if max(window_clipped_ratio, model_clipped_ratio, metrics["clipped_frame_ratio"]) > CLIPPED_FRAME_LIMIT:
         return fail("clipping", "声音失真，请离麦克风稍远或降低音量后重录")
 
     if overall_rms < MIN_RECORDING_RMS and window_rms < MIN_WINDOW_RMS:
@@ -220,7 +207,7 @@ def check_enrollment_audio(
     window_speech_seconds = float(np.mean(speech_mask[window_first:window_last])) * (
         (window_last - window_first) * FRAME_SECONDS
     )
-    flatness = _window_spectral_flatness(values, sample_rate, start, window_length, speech_mask)
+    flatness = _window_spectral_flatness(model_values, model_rate, start, window_length, speech_mask)
     metrics["noise_floor_rms"] = noise_floor
     metrics["speech_threshold_rms"] = speech_threshold
     metrics["total_speech_seconds"] = total_speech_seconds

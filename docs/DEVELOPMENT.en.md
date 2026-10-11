@@ -35,7 +35,7 @@ Clone and install the controller environment:
 ```bash
 git clone https://github.com/chenerzhong123-cloud/micforyou.git
 cd micforyou
-uv sync --extra dev
+uv sync --extra dev --extra model
 ```
 
 All following steps run from the project directory. Reset the `MFY_*` variables below when reopening a terminal; do not delete the project `.venv` or move the source directory referenced by your configuration.

@@ -180,15 +180,11 @@ def main() -> None:
     enrollment, enrollment_rate = torchaudio.load(args.enrollment)
     if enrollment.shape[0] > 1:
         enrollment = enrollment.mean(dim=0, keepdim=True)
-    if enrollment_rate != extractor.resample_rate:
-        enrollment = torchaudio.functional.resample(
-            enrollment, enrollment_rate, extractor.resample_rate
-        )
-    from micforyou.runtime import select_enrollment_window
+    from micforyou.runtime import prepare_enrollment_reference
 
-    enrollment, enrollment_selection = select_enrollment_window(
-        enrollment, int(extractor.resample_rate), args.enrollment_seconds
-    )
+    reference = prepare_enrollment_reference(
+        enrollment, enrollment_rate, args.enrollment_seconds, int(extractor.resample_rate))
+    enrollment, enrollment_selection = reference.selected, reference.selection
     with torch.inference_mode():
         conditioning = precompute_conditioning(model, enrollment)
 

@@ -56,6 +56,47 @@ def select_enrollment_window(enrollment, sample_rate: int, max_seconds: float):
     }
 
 
+MODEL_SAMPLE_RATE = 16000
+
+
+@dataclass(frozen=True)
+class EnrollmentReference:
+    model_audio: object
+    selected: object
+    selection: dict
+
+
+def prepare_enrollment_reference(enrollment, source_rate: int, max_seconds: float,
+                                 model_rate: int = MODEL_SAMPLE_RATE) -> EnrollmentReference:
+    """The single capture -> model reference path, preserving the model baseline.
+
+    Uses torchaudio's existing default resampler, then the existing selector.
+    Source coordinates cover [floor(start), ceil(end)) of the same time span;
+    they are used only for source distortion checks, never for model selection.
+    """
+    import torch
+    import torchaudio
+    if source_rate <= 0 or model_rate != MODEL_SAMPLE_RATE:
+        raise ValueError("reference requires a positive source rate and the 16k model rate")
+    audio = torch.as_tensor(enrollment, dtype=torch.float32)
+    if audio.ndim == 1:
+        audio = audio.unsqueeze(0)
+    if audio.ndim != 2 or audio.shape[0] != 1 or audio.shape[-1] == 0:
+        raise ValueError("reference requires nonempty mono audio [1, samples]")
+    source_length = audio.shape[-1]
+    model_audio = (audio if source_rate == model_rate else
+                   torchaudio.functional.resample(audio, source_rate, model_rate))
+    selected, selection = select_enrollment_window(model_audio, model_rate, max_seconds)
+    start = round(selection["selected_start_seconds"] * model_rate)
+    end = start + selected.shape[-1]
+    selection.update(source_seconds=source_length / source_rate, model_sample_rate=model_rate, selected_start_samples=start,
+                     selected_end_samples=end, source_sample_rate=source_rate,
+                     source_start_samples=start * source_rate // model_rate,
+                     source_end_samples=min(source_length, (end * source_rate + model_rate - 1) // model_rate),
+                     selection_stride_seconds=(model_rate // 4) / model_rate)
+    return EnrollmentReference(model_audio, selected, selection)
+
+
 @dataclass(frozen=True)
 class OrtThreadSetting:
     """An ORT thread request and the exact label written to reports."""
