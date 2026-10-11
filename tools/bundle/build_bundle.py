@@ -116,6 +116,8 @@ def main():
     for name in ("avg_model.pt", "config.yaml"):
         shutil.copy2(model / name, root / "models/tfmap_context_causal_100" / name)
     copy_code(PROJECT / "licenses", root / "licenses")
+    shutil.copy2(PROJECT / "LICENSE", root / "licenses/PROJECT_LICENSE.txt")
+    shutil.copy2(PROJECT / "NOTICE", root / "licenses/PROJECT_NOTICE.txt")
     copy_code(args.native_assets / "licenses", root / "licenses/native")
     if args.blackhole_pkg:
         installers = args.app / "Contents/Resources/Installers"
@@ -131,6 +133,7 @@ print(json.dumps([{'name':d.metadata['Name'],'version':d.version,
  for d in m.distributions()],indent=2))"""
     manifest = {
         "schema": "micforyou/bundle/1", "version": version, "architecture": "arm64",
+        "project_license": "Apache-2.0",
         "real_tse_commit": SOURCE_COMMIT, "wespeaker_commit": WESPEAKER_COMMIT,
         "model_sha256": WEIGHTS_HASH,
         "model_licenses": ["Apache-2.0 (Ke Zhang's portions)", "CC-BY-4.0 (WeSpeaker ECAPA parameters)"],

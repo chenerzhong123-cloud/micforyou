@@ -61,6 +61,8 @@ Upgrading from the 0.1.1 controller requires one new registration in the complet
 app. Existing audio, models and settings are preserved until that passes. The
 complete app does not launch the developer runtime referenced by legacy settings.
 
+Original project code and documentation use [Apache-2.0](../LICENSE), with attribution in [NOTICE](../NOTICE). This does not replace the third-party terms below.
+
 Ke Zhang's own inference code and trained parameters are authorized under
 Apache-2.0. Third-party WeSpeaker ECAPA parameters retain upstream CC BY 4.0
 attribution. See Credits in Settings and [model notices](../licenses/MODEL_NOTICES.md).

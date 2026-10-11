@@ -67,7 +67,8 @@ def main():
         shutil.copytree(PROJECT / 'tools/installer/resources', resources)
         # Show all model/driver terms; the source texts are also retained inside the App.
         notices = ['MODEL_NOTICES.md', 'Apache-2.0.txt', 'BLACKHOLE_NOTICES.md', 'BlackHole-LICENSE.txt']
-        license_text = '\n\n'.join((PROJECT / 'licenses' / name).read_text() for name in notices)
+        license_text = (PROJECT / 'LICENSE').read_text() + '\n\n' + (PROJECT / 'NOTICE').read_text()
+        license_text += '\n\n' + '\n\n'.join((PROJECT / 'licenses' / name).read_text() for name in notices)
         license_text += '\n\nCC BY 4.0: https://creativecommons.org/licenses/by/4.0/legalcode.en\n'
         (resources / 'license.txt').write_text(license_text)
         dist = stage / 'Distribution.xml'
@@ -91,6 +92,8 @@ def main():
     for source, name in [('BUNDLED_APP.md', 'INSTALL.zh.md'), ('BUNDLED_APP.en.md', 'INSTALL.en.md')]:
         guide = (PROJECT / 'docs' / source).read_text().replace(
             '../licenses/', '/Applications/MicForYou.app/Contents/Resources/Runtime/licenses/')
+        guide = guide.replace('../LICENSE', '/Applications/MicForYou.app/Contents/Resources/Runtime/licenses/PROJECT_LICENSE.txt')
+        guide = guide.replace('../NOTICE', '/Applications/MicForYou.app/Contents/Resources/Runtime/licenses/PROJECT_NOTICE.txt')
         (args.output.parent / name).write_text(guide)
     print(args.output)
 

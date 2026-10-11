@@ -2,6 +2,8 @@
 name = "micforyou"
 version = "0.2.1"
 description = "Local target-speaker audio preprocessor for Doubao IME"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "numpy>=1.26,<3",

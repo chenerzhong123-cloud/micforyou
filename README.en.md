@@ -2,104 +2,38 @@
 
 English · [简体中文](README.md)
 
-<img src="app/MicForYouMenuBar/Resources/AppIcon.png" width="96" alt="Official MicForYou logo">
+## What is it?
 
-**A shared space. A clearer voice.**
+https://github.com/user-attachments/assets/066f815d-fb09-4240-86b6-3538726c227a
 
-Dictate a proposal at an open desk without giving every nearby conversation a place in your sentence. MicForYou uses your enrolled voice as a reference to process microphone audio locally on your Mac, reducing some nearby speech and environmental interference before sending it to Doubao IME for transcription.
+[Watch / download the video (55 seconds, in Chinese)](docs/media/micforyou-promo-v5.mp4). This is an animated product demonstration, not a measured before-and-after comparison.
 
-This **Experimental Alpha** is distributed through GitHub; there is no App Store version. The complete 0.2.1 installer includes the app, runtime, general model and audio driver. First use requires system installation authorization, microphone permission and personal voice registration.
+**A shared space. Fewer voices in your sentence.**
 
-## Watch the demo
+MicForYou is a voice-filtering app for Mac. It uses your registered voice as a reference to reduce background noise and nearby speech, then sends the audio to Doubao IME for transcription. It is designed for open offices and shared workspaces where people are talking around you.
 
-[![Latest MicForYou demo preview](docs/media/promo-preview.png)](docs/media/micforyou-promo-latest.mp4)
+## How to install
 
-[Watch / download the latest demo (MP4, 55 seconds)](docs/media/micforyou-promo-latest.mp4). Download it from the GitHub file page to play it locally. The interface, transcription, and waveforms are animated illustrations, not measured before/after results. The film is currently in Chinese.
+This is a test version. Downloads currently require access to the private repository.
 
-## Hardware and performance requirements
+1. Download the `.pkg` installer (about 443 MB) from the [download page](https://github.com/chenerzhong123-cloud/micforyou/releases). The app, model and audio components are included. No developer tools are needed.
+2. Double-click to install and enter your administrator password when prompted. Restart your Mac if requested. Before upgrading, choose “结束” (End) and quit the old app.
+3. Open MicForYou from Applications. In Settings, select your microphone, allow recording, and read naturally for 45 seconds in a quiet room to register your voice. Wait for preparation and performance checks to finish.
+4. Select **BlackHole 2ch** as Doubao's input device. Choose “开始过滤” (Start filtering) in MicForYou and wait until it is ready before dictating.
 
-**Use the validated MacBook Air M5 as the current recommended baseline. The tested M1 did not meet this model's real-time requirements and is not recommended for filtering.** Other devices must pass local performance checks, even with newer chips or higher specifications. A chip name alone does not guarantee acceptable latency.
+The test installer is not yet Apple Developer ID signed or notarized. If macOS blocks it, see the [detailed installation guide](docs/BUNDLED_APP.en.md). The app interface currently uses Chinese labels.
 
-| Requirement / device | Current requirements and results |
-| --- | --- |
-| OS and architecture | The menu-bar UI requires **macOS 14+**. The complete bundle supports **Apple Silicon (arm64)** only; Intel is unsupported. |
-| MacBook Air M5 | Previously passed a [30-minute run](docs/MAC_A_NEXT_STAGE.md), with internal bridge audio latency p95 around **260 ms**. This is the validated baseline; workload and power conditions still affect results. |
-| MacBook Pro M1 (tested device) | The current REAL-TSE checkpoint's best valid RTF was **1.052**: processing was slower than real time and could not keep up with continuous audio input. Real-time filtering is currently unsupported on this tested device. |
-| Other Macs | Insufficient validation, including other generations and Pro / Max / Ultra variants. Devices with comparable or greater sustained processing capacity are candidates, but must still pass performance checks. |
-| Disk and memory | The unpacked app is about 1 GB. Reserve at least 3 GB for registration models and reports. Minimum RAM has not been established through independent device tests. |
+## Performance requirements
 
-The complete app automatically checks local performance during voice registration. Recommended candidates need **RTF ≤ 0.80** (processing time / audio duration, leaving at least 20% throughput headroom), **internal bridge latency p95 < 400 ms** in paced verification, and no FAULT or audio underruns. Use AC power and verify under your usual workload: heavy background work can turn a passing configuration into a failing one. Source users can run [installation step 5](docs/INSTALL.en.md) manually. See the [performance guide](docs/PERFORMANCE_GUIDE.md) and [M1 test results](docs/MAC_B_COREML_THREAD_RECHECK_RESULTS_20260918.md).
+- **System:** macOS 14 or later on an Apple Silicon Mac. Intel Macs are unsupported.
+- **Recommended device:** MacBook Air M5, the currently validated baseline. The tested M1 did not meet real-time requirements and is not recommended.
+- **Other devices:** Must pass the app's performance check. A chip name alone cannot guarantee suitable performance. Use AC power where possible.
+- **Storage:** Reserve at least 3 GB. The installed app is about 1 GB; voice registration generates an additional personal model.
 
-**These latency figures measure MicForYou's audio path, excluding Doubao recognition and text display. They are not a promise of end-to-end dictation latency.** The earlier M5 validation is also not a hardware acceptance test for the new pause behavior.
+## Additional notes
 
-## Download and installation
+- **Pause keeps the microphone open:** Raw audio continues to the input method. Choose “结束” (End) to release the microphone. Quitting the interface also leaves background audio running.
+- **Data and results:** MicForYou processes audio and stores voice registration locally. Doubao's recognition follows its own policies. Filtering reduces interference but cannot guarantee complete isolation of nearby speech.
+- **License:** Original project code and documentation use [Apache-2.0](LICENSE). Models and third-party components retain their own licenses.
 
-**The complete 0.2.1 installer has been built**, including the app, arm64 Python, inference dependencies, general REAL-TSE checkpoint and authorized official BlackHole 2ch. No developer tools or separate model/driver downloads are needed. It remains a Draft acceptance build in a private repository. Clean-device testing, final native distribution review and Developer ID/notarization are pending.
-
-Read the [installation guide](docs/BUNDLED_APP.en.md). Maintainers with access can download the `.pkg` and `.sha256` from `v0.2.1-local-alpha` Draft Assets in [GitHub Releases](https://github.com/chenerzhong123-cloud/micforyou/releases); public users can follow the same process after publication. Verify the checksum, end audio and quit the old app, then double-click to install into `/Applications`. Restart when prompted after driver installation. Register your voice; after export, validation and performance checks pass, select `BlackHole 2ch` in Doubao. Personal data is preserved.
-
-The repository is currently private, so access requires permission. No public complete release asset is available. GitHub's `Source code (zip)` is source, not an app installer. Developers can still use the [source installation guide](docs/INSTALL.en.md).
-
-The model's licenses are scoped: Ke Zhang's own portions are authorized under Apache-2.0; WeSpeaker ECAPA parameters retain upstream CC BY 4.0 attribution. See [model notices](licenses/MODEL_NOTICES.md) and the [licensing review](docs/MODEL_DISTRIBUTION_AUDIT.md).
-
-## Everyday use
-
-After setup, open the MicForYou menu, choose “开始过滤” (Start filtering), wait for “正在过滤” (Filtering), then dictate using Doubao. The app interface currently uses Chinese labels.
-
-| Action | Audio sent to the IME | Microphone |
-| --- | --- | --- |
-| Start filtering | Processed audio; silence until loading completes | In use |
-| Pause filtering | **Raw audio continues, including your voice, nearby people, and surroundings** | Still in use |
-| Resume filtering | Fresh streaming state restores filtering without reopening devices | Still in use |
-| End | No audio from this route | Released |
-| Quit interface | Background audio continues in its current mode | Still in use while running or paused |
-
-Pause stops filtering, not capture. Choose “结束” (End) to release the microphone before quitting, changing microphones, or enrolling again. Pause/resume does not require reselecting Doubao's input device.
-
-Terminal users can run these commands from the project directory:
-
-```bash
-uv run micforyou status
-uv run micforyou start
-uv run micforyou pause   # raw audio continues; microphone stays open
-uv run micforyou resume  # restore filtering
-uv run micforyou stop    # end and release the microphone
-```
-
-MicForYou never changes the system's default input automatically. If Doubao lacks its own input selector, manually choose BlackHole in **System Settings → Sound → Input**, and restore your physical microphone afterward if needed. Keep the system output on your usual speakers/headphones.
-
-## Support and limitations
-
-- Filtering reduces some other speech but **cannot guarantee isolation**. Other people may still be transcribed while you are silent. This is not an identity-verification or privacy-isolation tool.
-- Raw passthrough on pause has automated and real-ONNX/synthetic-input checks. Physical-device transitions, Doubao experience, and a new 30-minute stability test remain pending. See the [validation record](docs/PAUSE_PASSTHROUGH_VALIDATION.md).
-- Source control excludes weights and personal audio. Complete app bundles include the general checkpoint under scoped Apache-2.0 / CC BY 4.0 terms; see the [licensing review](docs/MODEL_DISTRIBUTION_AUDIT.md).
-
-## Local data and faults
-
-MicForYou processes and enrolls audio locally. It does not perform ASR or type text. Doubao's recognition and data handling follow its own policies; local preprocessing does not make the complete dictation flow offline.
-
-The default runtime-fault policy is silence. An explicit pause enables raw passthrough, with a different visible state. A fault is never silently treated as a user pause. If the selected microphone disappears, the app does not automatically choose another microphone.
-
-Configuration and runtime metadata live in `~/Library/Application Support/MicForYou/`; new reports use its `work/runs/` directory. Logs contain no audio, embeddings, or IME text. Enrollment audio and personalized ONNX files remain in your chosen local directories; do not commit them to GitHub.
-
-## Update, troubleshoot, and uninstall
-
-Complete-bundle updates: choose End and quit the interface, download the new complete ZIP, replace the app, and reopen it. Voice data and settings in Application Support are preserved. Confirm readiness before starting filtering again.
-Upgrading from the 0.1.1 controller requires one new registration; settings are replaced only after it passes.
-
-Source-install users can update with the following commands. These build the controller shell, not the complete runtime bundle:
-
-```bash
-git pull --ff-only
-uv sync --extra dev
-./app/MicForYouMenuBar/install_app.sh
-```
-
-This preserves configuration, models, and enrollment. Older versions released capture on pause. Upgrading does not automatically reopen the microphone; explicitly start filtering again. Do not replace runtime files while raw output is active.
-
-- Setup incomplete: check the driver, microphone and registration progress in Settings. Source users can also run `uv run micforyou status`.
-- No text: check readiness, Doubao's `BlackHole 2ch` selection, and macOS microphone permission for the process actually capturing audio.
-- Microphone still active: pause and quitting the interface preserve audio. Choose End or run `uv run micforyou stop`.
-- Uninstall: end audio, quit, move `/Applications/MicForYou.app` (and any old ZIP copy in `~/Applications`) to Trash, and restore Doubao's input. Configuration, enrollment, and BlackHole are separate resources; back up or remove them as needed.
-
-[Complete-bundle installation](docs/BUNDLED_APP.en.md) · [Source installation](docs/INSTALL.en.md) · [Menu-bar guide](docs/MENU_BAR_APP.md) · [Performance checks](docs/PERFORMANCE_GUIDE.md) · [Development history](docs/DEVELOPMENT_HISTORY.md) · [Video source](video/README.md)
+See the [technical reference](docs/TECHNICAL_GUIDE.en.md) for performance evidence, updates, removal, troubleshooting and development details.

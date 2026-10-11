@@ -68,3 +68,11 @@ release-ready.
 The complete product installer includes the authorized official BlackHole 2ch component.
 The original package is also bundled for offline repair. See BLACKHOLE_NOTICES.md;
 BlackHole source and official binary terms are separate.
+
+## MicForYou project license
+
+MicForYou original code and documentation use Apache-2.0. Root LICENSE and
+NOTICE cover the project; future complete bundles include PROJECT_LICENSE.txt
+and PROJECT_NOTICE.txt in this directory. The existing October 9 installer is
+supplied with these as additional Release assets. This grant does not replace
+any model, official driver or runtime dependency terms above.

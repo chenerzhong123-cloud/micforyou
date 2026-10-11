@@ -42,7 +42,7 @@ curl -fL https://existential.audio/downloads/BlackHole2ch-0.7.1.pkg -o BlackHole
 
 1. 完成本次新增行为的真实麦克风、豆包、断链与 30 分钟混合运行验收，结果写入 `PAUSE_PASSTHROUGH_VALIDATION.md`。保留模型质量边界。
 2. 确认目标受众：private 仓库仅向已有访问权限的人分发；面向所有用户时，由仓库所有者决定可见性或单独分发仓库，并调整双语 README 的下载状态。
-3. 明确本项目代码与品牌资源的分发许可；当前仓库没有项目 LICENSE。通用模型随完整 App 内置，各部分来源与许可分别保留。已识别 LGPL／MPL 组件源码随包交付，全部实际原生库仍需最终分发复核。
+3. 本项目自有代码与文档已采用 Apache-2.0，保留根目录 LICENSE／NOTICE；商标权不由该许可授予。通用模型随完整 App 内置，各部分来源与许可分别保留。已识别 LGPL／MPL 组件源码随包交付，全部实际原生库仍需最终分发复核。
 4. 面向普通用户分发前，推荐配置 Developer ID 签名与 Apple 公证，以减少首次打开阻拦。当前极客测试包仍明确说明 ad-hoc 状态。
 5. 提交经审查的源码、双语说明和视频，创建 Experimental Alpha prerelease，上传完整 `.pkg`、checksum、manifest 和双语说明、宣传片；只声明已验证的架构。README 的 Release 链接使用发布后的真实资产。
 
@@ -54,3 +54,9 @@ curl -fL https://existential.audio/downloads/BlackHole2ch-0.7.1.pkg -o BlackHole
 - 修复首次 configure 不保存与 set-policy 被旧值覆盖的问题。
 - 增加中英文 GitHub 安装指南、独立模型环境 requirements、最新宣传片和 C01 品牌资源。
 - 已验证：自动测试、Swift build / model check、本机签名与 ZIP、真实 ONNX 合成输入模式切换。真机与豆包新行为验收状态见验证记录。
+
+## 2026-10-11 文档与许可更新
+
+根目录新增 Apache-2.0 LICENSE／NOTICE，中英文 README 改为用户指南；性能与开发说明移至 TECHNICAL_GUIDE 中英文版本。v5 视频使用 GitHub 媒体附件播放器，并在 docs/media 保留同字节下载副本。
+
+现有 0.2.1 安装包与其校验值保持不变；Draft Release 补附 LICENSE、NOTICE、视频和双语 README。后续构建将项目许可置入 App 与安装器。不能声称原有包内已包含本次新加的项目许可，第三方许可亦保持原样。

@@ -1,0 +1,17 @@
+MicForYou
+Copyright 2026 MicForYou contributors
+
+MicForYou's original code and documentation are licensed under the Apache
+License, Version 2.0. See LICENSE. This notice is informational and does not
+modify the license or grant trademark rights.
+
+Third-party code, models, binaries and notices retain their respective terms:
+- REAL-TSE author-owned inference code and parameters: Apache-2.0.
+- WeSpeaker ECAPA pretrained parameters: CC BY 4.0; WeSpeaker code: Apache-2.0.
+- Official BlackHole 2ch binaries: separate integration authorization.
+- Python, inference/audio dependencies and native libraries: their own licenses.
+
+See licenses/MODEL_NOTICES.md, licenses/BLACKHOLE_NOTICES.md and
+licenses/NATIVE_NOTICES.md for attribution, source references and license texts.
+This project is not endorsed by the upstream authors or the Apache Software
+Foundation. The project license does not replace third-party licenses.
