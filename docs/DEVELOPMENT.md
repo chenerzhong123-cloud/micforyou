@@ -120,21 +120,26 @@ correctness 报告的 `gate.verdict` 必须是 `PASS`；失败时不要启动实
   --result "$MFY_DATA/reports/benchmark.json"
 ```
 
-`gate` 应为 SUCCESS（有效候选 RTF ≤ 0.80）；MARGINAL／FAIL 不作为推荐配置。再用配速工具复核实时队列动态（benchmark 不能替代）：
+`gate` 应为 SUCCESS（有效候选 RTF ≤ 0.80）；MARGINAL／FAIL 不作为推荐配置。可从已有 benchmark JSON 重算建议：`uv run micforyou recommend-frames --benchmark .../benchmark.json`。
+
+**先确定帧数候选，再复核与配置。** 从 benchmark 结果中选定一个通过候选（示例 `MFY_FRAMES=8` 来自已验证机型，不是通用门槛），后续 correctness、延迟复核和 configure 必须使用同一帧数。correctness 也须按该帧数重跑（见第 4 节）。
+
+用配速工具复核实时队列动态（benchmark 不能替代）。注意 `--backend` 默认是 `torch`，必须显式传 `onnx` 才测的是 configure 实际运行的路径；`--prefill-ms` 须与 configure 一致（默认 100 ms）：
 
 ```bash
+MFY_FRAMES=8   # 改为本机 benchmark 实际通过的候选
 "$MFY_RUNTIME/bin/python" tools/inference/measure_bridge_latency.py \
   --repo "$MFY_REPO" --model-dir "$MFY_MODEL" --enrollment "$MFY_VOICE" \
-  --onnx "$MFY_ONNX" --frames-per-chunk 8 --duration 30 \
+  --backend onnx --onnx "$MFY_ONNX" --onnx-threads 1 \
+  --frames-per-chunk "$MFY_FRAMES" --prefill-ms 100 --duration 30 \
   --result "$MFY_DATA/reports/latency.json"
 ```
 
-`bridge_latency.latency_ms_p95` ≥ 400 ms、FAULT 或持续 underrun 的候选不可用。这些指标只覆盖 MicForYou 内部音频路径，不含 CoreAudio、BlackHole 传递和豆包识别耗时。可从已有 benchmark JSON 重算建议：`uv run micforyou recommend-frames --benchmark .../benchmark.json`。
+判定读取结果 JSON 的 `bridge_internal` 段（终端摘要只是缩略）：`bridge_internal.bridge_latency.latency_ms_p95` ≥ 400 ms、`bridge_internal.status` 为 FAULT、`length_match` 不为 true、`nonfinite_samples` 非 0 或持续 underrun（`bridge_internal.underrun_ms`）的候选不可用。这些指标只覆盖 MicForYou 内部音频路径，不含 CoreAudio、BlackHole 传递和豆包识别耗时。
 
-`MFY_FRAMES=8` 只是已验证机型的示例；必须改为本机实际通过的候选，且该候选的 correctness 与配速复核按相同帧数重做。最后写入配置并确认就绪：
+最后写入配置并确认就绪（帧数与上面复核一致）：
 
 ```bash
-MFY_FRAMES=8
 uv run micforyou configure \
   --input-device "$MFY_MIC" --output-device "BlackHole 2ch" \
   --model-repo "$MFY_REPO" --model-dir "$MFY_MODEL" \
@@ -178,21 +183,31 @@ uv run python tools/verification/verify_pause_passthrough.py --config "$HOME/Lib
 
 ## 8．构建完整安装包
 
-完整包在全新输出目录构建，固定校验源码版本与 checkpoint hash。准备独立 CPython 3.12 与原生依赖：
+完整包在全新输出目录构建，固定校验源码版本与 checkpoint hash。当前原生依赖源码与声明固定 CPython 3.12.13，构建 Python 必须使用同一版本：
 
 ```bash
-uv python install 3.12 --install-dir outputs/bundle-build/python
-# 用 requirements-bundle.lock 初始化该 Python（仅对构建专用 Python 使用
-# --break-system-packages，不得修改系统 Python）
-uv pip install --break-system-packages --python outputs/bundle-build/python/bin/python3.12 \
+# 安装到专用目录，再用 uv 发现实际解释器本体（install-dir 只是容器目录，
+# 不是安装本体，不能直接当 PYTHON_ROOT 用）
+uv python install 3.12.13 --install-dir outputs/bundle-build/python
+PYTHON_BIN=$(UV_PYTHON_INSTALL_DIR="$PWD/outputs/bundle-build/python" \
+  uv python find --managed-python --no-project --resolve-links 3.12.13)
+PYTHON_ROOT="$(dirname "$(dirname "$PYTHON_BIN")")"   # 解释器路径上提两级 = 安装本体
+test -x "$PYTHON_ROOT/bin/python3.12"   # 确认推导结果可用
+```
+
+后续所有构建步骤都使用同一个推导出的 `PYTHON_ROOT`。用 requirements-bundle.lock 初始化该 Python（仅对构建专用 Python 使用 `--break-system-packages`，不得修改系统 Python），并准备原生依赖：
+
+```bash
+uv pip install --break-system-packages --python "$PYTHON_ROOT/bin/python3.12" \
   -r requirements-bundle.lock
 uv pip install --target outputs/bundle-build/cmake cmake==4.4.4
-PYTHON_ROOT="$PWD/outputs/bundle-build/python"
 "$PYTHON_ROOT/bin/python3.12" -B tools/bundle/prepare_native.py \
   --sources outputs/bundle-build/sources \
   --cmake outputs/bundle-build/cmake/cmake/data/bin/cmake \
   --output outputs/bundle-build/native
 ```
+
+`<wespeaker-package-dir>` 指向模型环境 site-packages 中安装的 WeSpeaker **包目录**（不是 Git 仓库根），例如 `$MFY_RUNTIME/lib/python3.12/site-packages/wespeaker`；构建器通过其旁的 `wespeaker-*.dist-info/direct_url.json` 核对固定 revision，因此必须来自按第 3 节固定版本安装的模型环境。
 
 构建完整 App ZIP：
 
@@ -208,7 +223,7 @@ curl -fL https://existential.audio/downloads/BlackHole2ch-0.7.1.pkg -o BlackHole
   <wespeaker-package-dir> BlackHole2ch-0.7.1.pkg <全新输出目录>
 ```
 
-构建器将完整 App 与官方驱动组成 `.pkg`，附 checksum、manifest 和双语安装说明（由 `docs/INSTALL.md`／`INSTALL.en.md` 转换生成，随包路径重写许可链接）。输出目录必须全新。普通 venv 不能作为 `PYTHON_ROOT`；完整包不包含个人声音和个性化模型。
+构建器将完整 App 与官方驱动组成 `.pkg`，附 checksum、manifest 和双语安装与使用说明（由 `docs/INSTALL.md`／`INSTALL.en.md`／`USAGE.md`／`USAGE.en.md` 转换生成，导航与许可链接按交付布局重写）。输出目录必须全新。普通 venv 不能作为 `PYTHON_ROOT`；完整包不包含个人声音和个性化模型。
 
 `package_release.sh` 只生成控制器外壳 ZIP（不含 Python、权重、注册），其说明指向本指南的源码设置部分；不要把它当作完整包。
 
@@ -217,18 +232,24 @@ curl -fL https://existential.audio/downloads/BlackHole2ch-0.7.1.pkg -o BlackHole
 `verify_installer.py` 只做只读检查（展开、校验 hash 与签名、查询安装选项），不执行管理员安装：
 
 ```bash
-# 先构建检查工具（单文件编译，产物放仓库外或 ignored 路径）
-cd app/MicForYouMenuBar
-swiftc Checks/BundleCheck.swift -o "$OLDPWD/outputs/installer-build/bundle-check"
-swiftc Checks/StandaloneCheck.swift -o "$OLDPWD/outputs/installer-build/standalone-check"
-cd ../..
+# 先构建检查工具（从仓库根执行；产物目录放仓库外或 ignored 路径）
+MFY_CHECKS="$PWD/outputs/installer-build"
+mkdir -p "$MFY_CHECKS"
+swiftc -parse-as-library \
+  app/MicForYouMenuBar/Checks/BundleCheck.swift \
+  -o "$MFY_CHECKS/bundle-check"
+swiftc -parse-as-library \
+  app/MicForYouMenuBar/Sources/MicForYouMenuBar/CLIClient.swift \
+  app/MicForYouMenuBar/Sources/MicForYouMenuBar/Models.swift \
+  app/MicForYouMenuBar/Checks/StandaloneCheck.swift \
+  -o "$MFY_CHECKS/standalone-check"
 
 "$PYTHON_ROOT/bin/python3.12" -B tools/bundle/verify_installer.py \
   --pkg <path/to/MicForYou.pkg> --work <全新检验目录> \
-  --checks-dir outputs/installer-build
+  --checks-dir "$MFY_CHECKS"
 ```
 
-`--checks-dir` 指向上一步构建的 `bundle-check`／`standalone-check`（默认 `outputs/installer-build`）。报告写入 `<work>/verification.json`；未执行的项目（管理员安装、重启、真机注册验收等）在 `not_run` 中列明。
+说明：`@main` 源文件需要 `-parse-as-library`；`StandaloneCheck` 依赖控制器外壳的 `CLIClient`／`Models` 定义，须一起编译。`--checks-dir` 指向上一步构建的 `bundle-check`／`standalone-check`（默认 `outputs/installer-build`）。报告写入 `<work>/verification.json`；未执行的项目（管理员安装、重启、真机注册验收等）在 `not_run` 中列明。
 
 ## 10．许可与分发注意
 

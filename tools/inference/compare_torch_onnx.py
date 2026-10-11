@@ -7,7 +7,7 @@ Checks, in order and before any speed claim:
   4. 100 consecutive chunks: stateful streaming stays in agreement
      (states handed from one chunk to the next on both sides; no resets)
 
-Writes handoff/mac-b-onnx-correctness.json. Suggested FP32 gate:
+Writes a correctness report (e.g. "$MFY_DATA/reports/onnx-correctness.json"). Suggested FP32 gate:
 max_abs_error <= 1e-4 ~ 1e-3.
 """
 

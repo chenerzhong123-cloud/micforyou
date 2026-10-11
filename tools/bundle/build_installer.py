@@ -89,12 +89,8 @@ def main():
                 'signing': 'combined pkg unsigned; App ad-hoc signed; official repair pkg signed/notarized',
                 'personal_data_included': False, 'public_release_ready': False}
     args.output.with_suffix('.manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-    for source, name in [('INSTALL.md', 'INSTALL.zh.md'), ('INSTALL.en.md', 'INSTALL.en.md')]:
-        guide = (PROJECT / 'docs' / source).read_text().replace(
-            '../licenses/', '/Applications/MicForYou.app/Contents/Resources/Runtime/licenses/')
-        guide = guide.replace('../LICENSE', '/Applications/MicForYou.app/Contents/Resources/Runtime/licenses/PROJECT_LICENSE.txt')
-        guide = guide.replace('../NOTICE', '/Applications/MicForYou.app/Contents/Resources/Runtime/licenses/PROJECT_NOTICE.txt')
-        (args.output.parent / name).write_text(guide)
+    from package_docs import PKG_APP_PREFIX, write_delivery_docs
+    write_delivery_docs(PROJECT, args.output.parent, PKG_APP_PREFIX)
     print(args.output)
 
 

@@ -11,14 +11,14 @@ Complex arithmetic is decomposed to real/imag at the wrapper boundary because
 ONNX has no complex dtype; the math mirrors BandMasker.forward exactly.
 Recurrent state is explicit: no state reset between chunks.
 
-Run with the official REAL-TSE venv:
+Run with the model runtime environment:
 
-    .venv-official/bin/python tools/inference/export_real_tse_onnx.py \
+    "$MFY_RUNTIME/bin/python" tools/inference/export_real_tse_onnx.py \
       --repo local-models/wesep-real-tse \
       --model-dir local-models/wesep-real-tse/pretrained/tfmap_context_causal_100 \
       --enrollment private-audio/enrollment_b.wav \
       --output handoff/real_tse_core_fp32.onnx \
-      --report handoff/mac-b-onnx-export-report.json
+      --report "$MFY_DATA/reports/onnx-export.json"
 """
 
 from __future__ import annotations

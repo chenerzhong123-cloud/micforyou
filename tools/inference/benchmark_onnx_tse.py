@@ -10,13 +10,13 @@ CPU mode supports the original auto/1/2/4 × 8/16/24 matrix. CoreML mode
 uses a static-shape model and preserves each requested thread setting for the
 CPU fallback path; never label an explicitly configured session as ``auto``.
 
-    .venv-official/bin/python tools/inference/benchmark_onnx_tse.py \
+    "$MFY_RUNTIME/bin/python" tools/inference/benchmark_onnx_tse.py \
       --repo local-models/wesep-real-tse \
       --model-dir .../tfmap_context_causal_100 \
       --enrollment private-audio/enrollment_b.wav \
-      --onnx handoff/real_tse_core_fp32.onnx \
-      --torch-baseline handoff/mac-b-thread-1-10s.json \
-      --result handoff/mac-b-onnx-cpu-benchmark.json
+      --onnx "$MFY_ONNX" \
+      --torch-baseline "$MFY_DATA/reports/torch-baseline.json" \
+      --result "$MFY_DATA/reports/onnx-benchmark.json"
 """
 
 from __future__ import annotations

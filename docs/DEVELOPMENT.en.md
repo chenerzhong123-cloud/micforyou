@@ -120,21 +120,26 @@ Run the full-path ONNX benchmark (synthetic input; a real microphone is never op
   --result "$MFY_DATA/reports/benchmark.json"
 ```
 
-`gate` should report SUCCESS (eligible candidates RTF ≤ 0.80); MARGINAL/FAIL is not a recommended configuration. Then re-check pacing with the latency tool (the benchmark cannot replace it):
+`gate` should report SUCCESS (eligible candidates RTF ≤ 0.80); MARGINAL/FAIL is not a recommended configuration. You can recompute a recommendation from an existing benchmark JSON with `uv run micforyou recommend-frames --benchmark .../benchmark.json`.
+
+**Pick the frame candidate first, then re-check and configure.** Select a passing candidate from the benchmark report (the example `MFY_FRAMES=8` comes from a validated machine and is not a universal threshold); the subsequent correctness check, latency re-check, and configure must all use that same frame count. Redo correctness for it as well (see section 4).
+
+Re-check pacing with the latency tool (the benchmark cannot replace it). Note that `--backend` defaults to `torch`; pass `onnx` explicitly so you measure the path configure will actually run, and keep `--prefill-ms` consistent with configure (default 100 ms):
 
 ```bash
+MFY_FRAMES=8   # replace with the candidate that actually passed the benchmark on this Mac
 "$MFY_RUNTIME/bin/python" tools/inference/measure_bridge_latency.py \
   --repo "$MFY_REPO" --model-dir "$MFY_MODEL" --enrollment "$MFY_VOICE" \
-  --onnx "$MFY_ONNX" --frames-per-chunk 8 --duration 30 \
+  --backend onnx --onnx "$MFY_ONNX" --onnx-threads 1 \
+  --frames-per-chunk "$MFY_FRAMES" --prefill-ms 100 --duration 30 \
   --result "$MFY_DATA/reports/latency.json"
 ```
 
-A candidate with `bridge_latency.latency_ms_p95` ≥ 400 ms, FAULT, or sustained underruns is unusable. These metrics cover only MicForYou's internal audio path — not CoreAudio, the BlackHole transfer, or Doubao recognition time. You can recompute a recommendation from an existing benchmark JSON with `uv run micforyou recommend-frames --benchmark .../benchmark.json`.
+Read the verdict from the `bridge_internal` section of the result JSON (the terminal summary is abbreviated): a candidate with `bridge_internal.bridge_latency.latency_ms_p95` ≥ 400 ms, `bridge_internal.status` FAULT, `length_match` not true, `nonfinite_samples` non-zero, or sustained underruns (`bridge_internal.underrun_ms`) is unusable. These metrics cover only MicForYou's internal audio path — not CoreAudio, the BlackHole transfer, or Doubao recognition time.
 
-`MFY_FRAMES=8` is only an example from a validated machine; replace it with a candidate that actually passed on this Mac, and redo correctness and pacing for that same frame count. Finally write the configuration and confirm readiness:
+Finally write the configuration and confirm readiness (same frame count as re-checked above):
 
 ```bash
-MFY_FRAMES=8
 uv run micforyou configure \
   --input-device "$MFY_MIC" --output-device "BlackHole 2ch" \
   --model-repo "$MFY_REPO" --model-dir "$MFY_MODEL" \
@@ -179,22 +184,32 @@ The first model load may include upstream JIT compilation and take longer than l
 
 ## 8. Build the complete installer
 
-Complete bundles are built into fresh output directories with pinned source revisions and checkpoint hashes verified at build time. Prepare the standalone CPython 3.12 and native dependencies:
+Complete bundles are built into fresh output directories with pinned source revisions and checkpoint hashes verified at build time. The current native dependency sources and metadata pin CPython 3.12.13; the build Python must be that exact version:
 
 ```bash
-uv python install 3.12 --install-dir outputs/bundle-build/python
-# Initialize that Python with requirements-bundle.lock (use
-# --break-system-packages only for this dedicated build Python; never modify
-# the system Python)
-uv pip install --break-system-packages --python outputs/bundle-build/python/bin/python3.12 \
+# Install into a dedicated directory, then let uv locate the actual
+# interpreter (the install-dir is only a container directory, not the install
+# itself, and cannot be used as PYTHON_ROOT directly)
+uv python install 3.12.13 --install-dir outputs/bundle-build/python
+PYTHON_BIN=$(UV_PYTHON_INSTALL_DIR="$PWD/outputs/bundle-build/python" \
+  uv python find --managed-python --no-project --resolve-links 3.12.13)
+PYTHON_ROOT="$(dirname "$(dirname "$PYTHON_BIN")")"   # up two levels from the interpreter = the install root
+test -x "$PYTHON_ROOT/bin/python3.12"   # confirm the resolved root works
+```
+
+All following build steps use this same resolved `PYTHON_ROOT`. Initialize it with requirements-bundle.lock (use `--break-system-packages` only for this dedicated build Python; never modify the system Python) and prepare the native dependencies:
+
+```bash
+uv pip install --break-system-packages --python "$PYTHON_ROOT/bin/python3.12" \
   -r requirements-bundle.lock
 uv pip install --target outputs/bundle-build/cmake cmake==4.4.4
-PYTHON_ROOT="$PWD/outputs/bundle-build/python"
 "$PYTHON_ROOT/bin/python3.12" -B tools/bundle/prepare_native.py \
   --sources outputs/bundle-build/sources \
   --cmake outputs/bundle-build/cmake/cmake/data/bin/cmake \
   --output outputs/bundle-build/native
 ```
+
+`<wespeaker-package-dir>` points at the WeSpeaker **package directory** installed in the model environment's site-packages (not the Git repository root), e.g. `$MFY_RUNTIME/lib/python3.12/site-packages/wespeaker`; the builder verifies the pinned revision via the adjacent `wespeaker-*.dist-info/direct_url.json`, so it must come from a model environment installed at the pinned revision per section 3.
 
 Build the complete app ZIP:
 
@@ -210,7 +225,7 @@ curl -fL https://existential.audio/downloads/BlackHole2ch-0.7.1.pkg -o BlackHole
   <wespeaker-package-dir> BlackHole2ch-0.7.1.pkg <fresh-output-dir>
 ```
 
-The builder combines the complete app and the official driver into a `.pkg` with a checksum, manifest, and bilingual install instructions (generated from `docs/INSTALL.md`/`INSTALL.en.md` with license links rewritten for the bundled paths). The output directory must be fresh. A normal venv cannot serve as `PYTHON_ROOT`; the complete bundle includes no personal voice or personalized model.
+The builder combines the complete app and the official driver into a `.pkg` with a checksum, manifest, and bilingual install and usage guides (generated from `docs/INSTALL.md`/`INSTALL.en.md`/`USAGE.md`/`USAGE.en.md` with navigation and license links rewritten for the delivered layout). The output directory must be fresh. A normal venv cannot serve as `PYTHON_ROOT`; the complete bundle includes no personal voice or personalized model.
 
 `package_release.sh` only produces the controller-shell ZIP (no Python, weights, or enrollment); its notes point to the source setup in this guide. Do not present it as a complete bundle.
 
@@ -219,19 +234,25 @@ The builder combines the complete app and the official driver into a `.pkg` with
 `verify_installer.py` performs read-only checks only (extraction, hash and signature verification, installer-choices query); it never runs an administrator installation:
 
 ```bash
-# Build the check tools first (single-file compilation; place outputs outside
-# the repository or in an ignored path)
-cd app/MicForYouMenuBar
-swiftc Checks/BundleCheck.swift -o "$OLDPWD/outputs/installer-build/bundle-check"
-swiftc Checks/StandaloneCheck.swift -o "$OLDPWD/outputs/installer-build/standalone-check"
-cd ../..
+# Build the check tools first (run from the repository root; place outputs
+# outside the repository or in an ignored path)
+MFY_CHECKS="$PWD/outputs/installer-build"
+mkdir -p "$MFY_CHECKS"
+swiftc -parse-as-library \
+  app/MicForYouMenuBar/Checks/BundleCheck.swift \
+  -o "$MFY_CHECKS/bundle-check"
+swiftc -parse-as-library \
+  app/MicForYouMenuBar/Sources/MicForYouMenuBar/CLIClient.swift \
+  app/MicForYouMenuBar/Sources/MicForYouMenuBar/Models.swift \
+  app/MicForYouMenuBar/Checks/StandaloneCheck.swift \
+  -o "$MFY_CHECKS/standalone-check"
 
 "$PYTHON_ROOT/bin/python3.12" -B tools/bundle/verify_installer.py \
   --pkg <path/to/MicForYou.pkg> --work <fresh-inspection-dir> \
-  --checks-dir outputs/installer-build
+  --checks-dir "$MFY_CHECKS"
 ```
 
-`--checks-dir` points at the `bundle-check`/`standalone-check` binaries from the previous step (default: `outputs/installer-build`). The report is written to `<work>/verification.json`; items not executed (administrator installation, restart, on-device enrollment acceptance, …) are listed under `not_run`.
+Notes: `@main` sources need `-parse-as-library`, and `StandaloneCheck` depends on the controller shell's `CLIClient`/`Models` definitions, which must be compiled together. `--checks-dir` points at the `bundle-check`/`standalone-check` binaries from the previous step (default: `outputs/installer-build`). The report is written to `<work>/verification.json`; items not executed (administrator installation, restart, on-device enrollment acceptance, …) are listed under `not_run`.
 
 ## 10. Licensing and distribution notes
 

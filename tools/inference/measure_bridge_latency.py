@@ -513,7 +513,7 @@ def main() -> None:
             "single-host monotonic clock; pacing jitter is reported separately",
             "simulated callbacks run in one Python thread, not the PortAudio "
             "callback thread; absolute latencies can differ from a live device run",
-            "results describe this Mac A host only and are not transferable",
+            "results describe the measured host only and are not transferable",
         ],
         "command": [str(part) for part in sys.argv],
     }
