@@ -20,6 +20,12 @@ import plistlib
 import shutil
 import subprocess
 import time
+import fcntl
+import shlex
+import stat
+import tempfile
+from contextlib import contextmanager
+from functools import wraps
 
 from .product import default_config_path
 
@@ -49,23 +55,109 @@ def tmp_dir() -> Path:
     return Path("/tmp") / f"micforyou-{os.getuid()}"
 
 
+def coordination_dir() -> Path:
+    # Outside every cleanup target; common to all configs for this user.
+    return Path.home() / ".micforyou-coordination"
+
+
 def uninstall_marker_path(config_parent: Path | None = None) -> Path:
-    base = config_parent if config_parent is not None else default_config_path().parent
-    return base / UNINSTALL_MARKER
+    return coordination_dir() / UNINSTALL_MARKER
+
+
+@contextmanager
+def coordination_lock():
+    root = coordination_dir()
+    root.mkdir(mode=0o700, exist_ok=True)
+    info = root.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise ValueError("不安全的卸载协调目录")
+    root.chmod(0o700)
+    fd = os.open(root / "guard.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        if os.fstat(fd).st_uid != os.getuid():
+            raise ValueError("不安全的卸载协调锁")
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
 
 
 def uninstall_in_progress(config_parent: Path | None = None) -> bool:
-    return uninstall_marker_path(config_parent).exists()
+    path = uninstall_marker_path()
+    if not path.exists():
+        return False
+    # A crashed executor cannot permanently block reinstallation. Only remove
+    # its lease after checking the recorded process is no longer that executor.
+    try:
+        lease = json.loads(path.read_text())
+        from .control import process_arguments
+        arguments = process_arguments(lease["executor_pid"])
+        if arguments and arguments[0] == lease["executor_path"]:
+            return True
+        directory = Path(lease["executor_path"]).parent
+        # An authorized helper may still be finishing a fixed driver command
+        # after its executor crashes. Keep the barrier until it also exits.
+        from .control import process_command
+        for companion in lease.get("companion_pids", []):
+            command = process_command(companion)
+            if command and str(directory) in command:
+                return True
+        # Recover only this executor's private directory, never an arbitrary
+        # path supplied in stale metadata. Leave the stable guard inode alone.
+        if (directory.name.startswith("micforyou-uninstall-") and
+                directory.parent.resolve() == Path(tempfile.gettempdir()).resolve() and
+                not directory.is_symlink() and directory.exists()):
+            info = directory.stat()
+            if info.st_uid == os.getuid() and stat.S_IMODE(info.st_mode) == 0o700:
+                shutil.rmtree(directory)
+        path.unlink()
+        return False
+    except (OSError, ValueError, KeyError, TypeError):
+        return True  # unknown lease is not proof that cleanup has finished
 
 
-def begin_uninstall_window(config_parent: Path | None = None) -> None:
-    path = uninstall_marker_path(config_parent)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("uninstall in progress; do not start tasks\n", encoding="utf-8")
+@contextmanager
+def startup_guard():
+    with coordination_lock():
+        if uninstall_in_progress():
+            raise ValueError("MicForYou 正在卸载，不能启动或修改任务")
+        yield
 
 
-def end_uninstall_window(config_parent: Path | None = None) -> None:
-    uninstall_marker_path(config_parent).unlink(missing_ok=True)
+def coordinated_start(function):
+    @wraps(function)
+    def run(*args, **kwargs):
+        with startup_guard():
+            return function(*args, **kwargs)
+    return run
+
+
+def begin_uninstall_window(config_parent: Path | None = None, *,
+                           executor_pid: int | None = None,
+                           executor_path: str | None = None,
+                           companion_pids: list[int] | None = None) -> None:
+    with coordination_lock():
+        if uninstall_in_progress():
+            raise ValueError("MicForYou 正在卸载")
+        path = uninstall_marker_path()
+        if executor_pid is None:
+            # Test/manual lease: explicitly released by its caller.
+            path.write_text("manual uninstall in progress\n")
+        else:
+            path.write_text(json.dumps({"executor_pid": executor_pid,
+                                        "executor_path": executor_path,
+                                        "companion_pids": companion_pids or []}))
+        path.chmod(0o600)
+
+
+def end_uninstall_window(config_parent: Path | None = None, *, executor_pid: int | None = None) -> None:
+    with coordination_lock():
+        path = uninstall_marker_path()
+        if executor_pid is not None and path.exists():
+            lease = json.loads(path.read_text())
+            if lease.get("executor_pid") != executor_pid:
+                raise ValueError("卸载协调状态不属于本次执行器")
+        path.unlink(missing_ok=True)
 
 
 def read_bundle_id(app_path: Path) -> str | None:
@@ -166,18 +258,20 @@ def build_plan(
 
 
 def _safe_to_delete(path: Path, allowed_roots: tuple[Path, ...]) -> str | None:
-    """Return a refusal reason, or None when deletion may proceed."""
-    if path.is_symlink():
-        return "符号链接，拒绝删除"
-    resolved = path.resolve(strict=False)
-    if resolved == Path(resolved.anchor):
-        return "拒绝删除根目录"
-    inside = any(
-        resolved == root or root in resolved.parents
-        for root in (r.resolve(strict=False) for r in allowed_roots)
-    )
-    if not inside:
-        return "目标不在允许的清理范围内"
+    if path not in allowed_roots or ".." in path.parts:
+        return "目标不在允许的精确清理范围内"
+    # /tmp is a macOS system alias. Every component below that trusted alias,
+    # and every component of a user-data path, must remain non-symlink.
+    check = path
+    boundary = Path("/tmp") if Path("/tmp") in path.parents else Path(path.anchor)
+    while check != boundary:
+        if check.is_symlink():
+            return "目标或父级为符号链接，拒绝删除"
+        if check == path and check.exists() and check.stat().st_uid != os.getuid():
+            return "目标不属于当前用户"
+        check = check.parent
+        if check == Path(check.anchor):
+            break
     return None
 
 
@@ -204,12 +298,16 @@ def execute_user_cleanup(
         if target.get("kind") in {"app", "old_app"}:
             continue  # native executor trashes bundles
         path = Path(target["path"])
-        if not path.exists():
-            results.append({"path": str(path), "status": "absent"})
-            continue
-        refusal = _safe_to_delete(path, allowed_roots)
+        expected = locations.get(target.get("kind"))
+        if target.get("kind") == "tmp_dir":
+            expected = tmp_dir()
+        refusal = ("类型、动作或路径不匹配" if target.get("action") != "delete" or path != expected
+                   else _safe_to_delete(path, allowed_roots))
         if refusal:
             results.append({"path": str(path), "status": "refused", "detail": refusal})
+            continue
+        if not path.exists():
+            results.append({"path": str(path), "status": "absent"})
             continue
         try:
             if path.is_dir():
@@ -220,82 +318,116 @@ def execute_user_cleanup(
         except OSError as error:
             results.append({"path": str(path), "status": "failed", "detail": str(error)})
     verified = all(
-        not Path(item["path"]).exists()
+        item["status"] in {"removed", "absent"} and not Path(item["path"]).exists()
         for item in results
-        if item["status"] in {"removed", "absent"}
     )
     return {"results": results, "verified": verified}
 
 
-def stop_all_tasks(
-    config_path: Path | None = None,
-    *,
-    timeout_seconds: float = 20.0,
-    home: Path | None = None,
-    command_reader=None,
-    signal_sender=None,
-    sleeper=time.sleep,
-    clock=time.monotonic,
-) -> dict:
-    """Stop the setup worker and the background bridge, then wait for exit.
+def process_groups() -> list[tuple[int, int, str]]:
+    result = subprocess.run(["ps", "-ww", "-u", str(os.getuid()), "-o", "pid=,pgid=,command="],
+                            capture_output=True, text=True, check=True, timeout=3)
+    rows = []
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) == 3:
+            rows.append((int(parts[0]), int(parts[1]), parts[2]))
+    return rows
 
-    Uses the existing identity rules (worker token via ps, process marker) and
-    never signals a PID it cannot identify. The marker file must already be in
-    place so no new task can start while we shut down.
+
+def worker_identity(command: str | list[str] | None, job: dict, config: Path) -> bool:
+    if not command or not isinstance(job.get("token"), str) or not job["token"]:
+        return False
+    try:
+        words = shlex.split(command) if isinstance(command, str) else command
+        marker = job.get("process_marker")
+        if marker is None and os.environ.get("MICFORYOU_BUNDLE_ROOT"):
+            marker = str(Path(os.environ["MICFORYOU_BUNDLE_ROOT"]) / "bootstrap.py")
+        return (len(words) > 2 and words[1] == marker and words[2] == "setup-worker" and
+                words[words.index("--token") + 1] == job["token"] and
+                Path(words[words.index("--config") + 1]) == config and
+                job.get("config_path", str(config)) == str(config))
+    except (ValueError, IndexError):
+        return False
+
+
+def stop_all_tasks(config_path: Path | None = None, *, timeout_seconds: float = 20.0,
+                   home: Path | None = None, command_reader=None, signal_sender=None,
+                   sleeper=time.sleep, clock=time.monotonic, group_reader=None, arguments_reader=None) -> dict:
+    """Under per-task locks, identify again before signaling, await whole groups.
+
+    The coordinator lease freezes new launchers. Missing/corrupt metadata is
+    checked against a bounded same-user process census, never a global scan.
+    All process operations are injectable for safe fixture tests.
     """
-    from .control import load_state, owns_process, process_command, stop_managed_process
+    from .control import load_state, process_command, process_arguments, save_state, RuntimeState, now_iso
     from .runtime_control import state_lock
-
-    if command_reader is None:
-        command_reader = process_command
-    config_path = config_path if config_path is not None else default_config_path()
-    state_path = config_path.parent / "state.json"
+    from dataclasses import asdict
+    config = config_path if config_path is not None else default_config_path()
+    real_processes = command_reader is None
+    check_groups = real_processes or group_reader is not None
+    command_reader = command_reader or process_command
+    arguments_reader = arguments_reader or (process_arguments if real_processes else command_reader)
+    group_reader = group_reader or (process_groups if real_processes else lambda: [])
     report = {"worker": None, "bridge": None, "all_stopped": True}
 
-    job_path = config_path.parent / "setup-job.json"
+    def stop(pid, identity):
+        rows = group_reader()
+        if command_reader(pid) is None and not any(g == pid for _, g, _ in rows):
+            return {"pid": pid, "signaled": False, "exited": True}
+        if check_groups and not any(p == pid and g == pid for p, g, _ in rows):
+            return {"pid": pid, "signaled": False, "exited": False,
+                    "detail": "进程组归属无法核实"}
+        if not identity(arguments_reader(pid)):
+            return {"pid": pid, "signaled": False, "exited": False,
+                    "detail": "任务身份无法核实，未发送信号"}
+        try:
+            (signal_sender or (lambda p: os.killpg(p, 15)))(pid)
+        except ProcessLookupError:
+            pass
+        deadline = clock() + timeout_seconds
+        def alive():
+            return command_reader(pid) is not None or any(g == pid for _, g, _ in group_reader())
+        while clock() < deadline and alive():
+            sleeper(0.1)
+        return {"pid": pid, "signaled": True, "exited": not alive()}
+
+    job_path = config.parent / "setup-job.json"
     with state_lock(job_path):
         try:
-            job = json.loads(job_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            job = json.loads(job_path.read_text())
+        except (OSError, ValueError):
             job = {}
-        pid = job.get("pid")
-        if job.get("status") == "RUNNING" and isinstance(pid, int):
-            command = command_reader(pid)
-            if command and "setup-worker" in command:
-                report["worker"] = {"pid": pid, "signaled": True}
-                if signal_sender is not None:
-                    signal_sender(pid)
-                else:
-                    os.killpg(pid, 15)
-                deadline = clock() + timeout_seconds
-                while clock() < deadline and command_reader(pid) is not None:
-                    sleeper(0.1)
-                alive = command_reader(pid) is not None
-                report["worker"]["exited"] = not alive
-                report["all_stopped"] = report["all_stopped"] and not alive
-            else:
-                report["worker"] = {"pid": pid, "signaled": False,
-                                    "detail": "无法核实归属，未发送信号"}
-                report["all_stopped"] = False
-
+        if job.get("status") == "RUNNING":
+            pid = job.get("pid")
+            report["worker"] = (stop(pid, lambda c: worker_identity(c, job, config))
+                                if isinstance(pid, int) and pid > 0 else
+                                {"signaled": False, "exited": False, "detail": "worker PID 缺失"})
+            report["all_stopped"] &= report["worker"]["exited"]
+    state_path = config.parent / "state.json"
     with state_lock(state_path):
-        state = load_state(state_path)
-        if state is not None and state.status in {"STARTING", "RUNNING", "RECOVERING",
-                                                  "PAUSED", "STOPPING"}:
-            if state.pid is not None and owns_process(state, command_reader):
-                try:
-                    stopped = stop_managed_process(
-                        state_path=state_path, final_status="STOPPED",
-                        timeout_seconds=timeout_seconds)
-                    report["bridge"] = {"pid": state.pid,
-                                        "status": stopped.status}
-                    report["all_stopped"] = report["all_stopped"] and stopped.status == "STOPPED"
-                except ValueError as error:
-                    report["bridge"] = {"pid": state.pid, "status": "FAILED",
-                                        "detail": str(error)}
-                    report["all_stopped"] = False
-            else:
-                report["bridge"] = {"pid": state.pid, "status": "skipped",
-                                    "detail": "进程身份无法核实，未停止"}
-                report["all_stopped"] = False
+        try:
+            state = load_state(state_path)
+        except (OSError, ValueError, TypeError):
+            state = None
+        if state and state.pid is not None:
+            def bridge_identity(command):
+                if not command or state.config_path != str(config) or not state.process_marker:
+                    return False
+                words = shlex.split(command) if isinstance(command, str) else command
+                return len(words) > 1 and words[1] == state.process_marker and state.control_token is not None and state.control_token in words
+            report["bridge"] = stop(state.pid, bridge_identity)
+            report["all_stopped"] &= report["bridge"]["exited"]
+            if report["bridge"]["exited"]:
+                save_state(RuntimeState(**{**asdict(state), "status": "STOPPED", "pid": None,
+                                           "process_marker": None, "updated_at": now_iso()}), state_path)
+    # Also catches children surviving their leader, and workers whose job/state
+    # was removed or damaged. Refuse cleanup rather than kill an unknown task.
+    child_scripts = ("run_real_tse_bridge.py", "export_real_tse_onnx.py",
+                     "benchmark_onnx_tse.py", "compare_torch_onnx.py", "measure_bridge_latency.py")
+    leftovers = [p for p, _, cmd in group_reader()
+                 if ("setup-worker" in cmd and "bootstrap.py" in cmd)
+                 or any(script in cmd for script in child_scripts)]
+    if leftovers:
+        report.update(all_stopped=False, unidentified_pids=leftovers)
     return report

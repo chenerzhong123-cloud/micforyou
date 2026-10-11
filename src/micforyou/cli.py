@@ -30,6 +30,7 @@ from .control import (
     switch_managed_mode,
 )
 from .runtime_control import state_lock
+from .uninstall import coordinated_start
 from functools import wraps
 from .evaluation import create_mixtures, score_output
 from .product import (
@@ -71,23 +72,43 @@ def command_uninstall(args: argparse.Namespace) -> None:
         write_json(plan, args.result)
         return
 
-    uninstall.begin_uninstall_window()
+    if args.abort:
+        if not args.executor_pid:
+            raise ValueError("取消卸载需要本次执行器身份")
+        uninstall.end_uninstall_window(executor_pid=args.executor_pid)
+        write_json({"aborted": True}, None)
+        return
+    if args.config != default_config_path():
+        raise ValueError("应用卸载只支持默认配置范围；自定义配置须先单独停止任务")
+    if not args.result or not args.executor_pid or not args.executor_path:
+        raise ValueError("卸载需要已准备并可接管的原生执行器")
+    from .control import process_arguments
+    arguments = process_arguments(args.executor_pid)
+    if not arguments or str(args.executor_path) != arguments[0]:
+        raise ValueError("卸载执行器未运行，未清理任何数据")
+    work = args.executor_path.parent
+    if not (work / "ready").is_file() or work.stat().st_uid != os.getuid() or work.stat().st_mode & 0o777 != 0o700:
+        raise ValueError("卸载执行器未准备妥当，未清理任何数据")
+    readiness = json.loads((work / "ready").read_text())
+    uninstall.begin_uninstall_window(executor_pid=args.executor_pid,
+                                     executor_path=str(args.executor_path),
+                                     companion_pids=readiness.get("companion_pids", []))
     try:
         stopped = uninstall.stop_all_tasks(args.config)
-        plan = uninstall.build_plan(
-            remove_user_data=not args.keep_data,
-            remove_driver=args.remove_driver,
-            app_path=args.app_path,
-        )
-        cleanup = uninstall.execute_user_cleanup(plan)
-        payload = {"plan": plan, "stopped": stopped, "cleanup": cleanup,
-                   "marker_path": str(uninstall.uninstall_marker_path())}
         if not stopped.get("all_stopped"):
-            uninstall.end_uninstall_window()
             raise ValueError(f"未能停止全部任务，已中止卸载：{stopped}")
-        write_json(payload, args.result)
+        plan = uninstall.build_plan(remove_user_data=not args.keep_data,
+                                    remove_driver=args.remove_driver, app_path=args.app_path)
+        # Deletion belongs solely to the ready executor, after the App exits.
+        payload = {"schema": "micforyou/uninstall-handoff/1", "plan": plan,
+                   "stopped": stopped, "marker_path": str(uninstall.uninstall_marker_path())}
+        temporary = args.result.with_suffix(".pending")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+        temporary.chmod(0o600)
+        temporary.replace(args.result)
+        write_json(payload, None)
     except Exception:
-        uninstall.end_uninstall_window()
+        uninstall.end_uninstall_window(executor_pid=args.executor_pid)
         raise
 
 
@@ -267,7 +288,8 @@ def _runtime_status(config_path: Path) -> dict[str, Any]:
 def configuration_command(function):
     @wraps(function)
     def run(args):
-        with state_lock(default_state_path(args.config)):
+        from .uninstall import startup_guard
+        with startup_guard(), state_lock(default_state_path(args.config)):
             require_inactive(args.config)
             return function(args)
     return run
@@ -350,6 +372,7 @@ def command_set_policy(args: argparse.Namespace) -> None:
     )
 
 
+@coordinated_start
 def command_status(args: argparse.Namespace) -> None:
     if not args.config.exists():
         write_json({"ready": False, "input_device": "", "output_device": BLACKHOLE_NAME,
@@ -405,6 +428,7 @@ def start_background(config: ProductConfig, args: argparse.Namespace) -> dict:
     return state.to_dict()
 
 
+@coordinated_start
 def command_start(args: argparse.Namespace) -> None:
     from .uninstall import uninstall_in_progress
     if uninstall_in_progress(args.config.parent):
@@ -443,6 +467,7 @@ def command_stop(args: argparse.Namespace) -> None:
     )
 
 
+@coordinated_start
 def command_run(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     status = product_status(config)
@@ -628,6 +653,9 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall_parser.add_argument("--app-path", type=Path,
                                   default=Path("/Applications/MicForYou.app"))
     uninstall_parser.add_argument("--result", type=Path)
+    uninstall_parser.add_argument("--executor-pid", type=int)
+    uninstall_parser.add_argument("--executor-path", type=Path)
+    uninstall_parser.add_argument("--abort", action="store_true")
     uninstall_parser.set_defaults(func=command_uninstall)
 
     check = subparsers.add_parser(

@@ -40,6 +40,12 @@ def make_locations(home: Path) -> dict:
     return spots
 
 
+@pytest.fixture(autouse=True)
+def private_coordinator(tmp_path, monkeypatch):
+    monkeypatch.setattr(uninstall, "coordination_dir", lambda: tmp_path / "coordinator")
+    monkeypatch.setattr(uninstall, "tmp_dir", lambda: tmp_path / "private-control")
+
+
 @pytest.fixture
 def home(tmp_path: Path) -> Path:
     return tmp_path / "home"
@@ -160,11 +166,11 @@ def test_stop_all_tasks_waits_for_worker_exit(tmp_path: Path):
     config = tmp_path / "config.json"
     config.parent.mkdir(parents=True, exist_ok=True)
     (config.parent / "setup-job.json").write_text(json.dumps(
-        {"status": "RUNNING", "pid": 4242, "token": "t"}))
+        {"status": "RUNNING", "pid": 4242, "token": "t", "process_marker": "/env/bootstrap.py", "config_path": str(config)}))
     calls = {"signals": 0}
 
     def reader(pid):
-        return None if calls["signals"] else "/env/bin/python bootstrap.py setup-worker"
+        return None if calls["signals"] else f"/env/bin/python /env/bootstrap.py setup-worker --token t --config {config}"
 
     def sender(pid):
         calls["signals"] += 1
@@ -198,10 +204,10 @@ def test_stop_all_tasks_reports_timeout(tmp_path: Path):
     config = tmp_path / "config.json"
     config.parent.mkdir(parents=True, exist_ok=True)
     (config.parent / "setup-job.json").write_text(json.dumps(
-        {"status": "RUNNING", "pid": 7, "token": "t"}))
+        {"status": "RUNNING", "pid": 7, "token": "t", "process_marker": "/env/bootstrap.py", "config_path": str(config)}))
 
     def reader(pid):
-        return "/env/bin/python bootstrap.py setup-worker"
+        return f"/env/bin/python /env/bootstrap.py setup-worker --token t --config {config}"
 
     ticks = iter([0.0, 0.0, 100.0])
     report = uninstall.stop_all_tasks(
@@ -209,3 +215,214 @@ def test_stop_all_tasks_reports_timeout(tmp_path: Path):
         sleeper=lambda _s: None, clock=lambda: next(ticks))
     assert report["worker"]["exited"] is False
     assert report["all_stopped"] is False
+
+
+def test_parent_symlink_and_wrong_action_refused(home, tmp_path):
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    home.mkdir()
+    (home / "Library").symlink_to(outside, target_is_directory=True)
+    support = uninstall.user_locations(home)["support_dir"]
+    support.mkdir(parents=True)
+    (support / "voice.wav").write_text("keep")
+    plan = {"targets": [{"kind": "support_dir", "path": str(support), "action": "delete"}]}
+    result = uninstall.execute_user_cleanup(plan, home=home)
+    assert not result["verified"] and result["results"][0]["status"] == "refused"
+    assert (support / "voice.wav").exists()
+    plan["targets"][0]["action"] = "trash"
+    assert not uninstall.execute_user_cleanup(plan, home=home)["verified"]
+
+
+def test_token_mismatch_and_second_identity_check(tmp_path):
+    config = tmp_path / "config.json"
+    job = {"status": "RUNNING", "pid": 7, "token": "expected",
+           "process_marker": "/env/bootstrap.py", "config_path": str(config)}
+    (tmp_path / "setup-job.json").write_text(json.dumps(job))
+    command = f"python /env/bootstrap.py setup-worker --config {config} --token different"
+    report = uninstall.stop_all_tasks(config, command_reader=lambda p: command,
+                                     signal_sender=lambda p: pytest.fail("foreign task signaled"))
+    assert not report["all_stopped"]
+    assert not report["worker"]["signaled"]
+
+
+def test_waits_for_children_after_leader_exit(tmp_path):
+    config = tmp_path / "config.json"
+    job = {"status": "RUNNING", "pid": 7, "token": "t",
+           "process_marker": "/env/bootstrap.py", "config_path": str(config)}
+    (tmp_path / "setup-job.json").write_text(json.dumps(job))
+    command = f"python /env/bootstrap.py setup-worker --config {config} --token t"
+    signaled = []
+    reader = lambda p: None if signaled else command
+    def groups():
+        return [(8, 7, "python exporter.py")] if signaled else [(7, 7, command), (8, 7, "python exporter.py")]
+    ticks = iter([0, 0, 100])
+    report = uninstall.stop_all_tasks(config, command_reader=reader,
+                                     signal_sender=signaled.append, group_reader=groups,
+                                     sleeper=lambda _: None, clock=lambda: next(ticks))
+    assert signaled == [7] and not report["all_stopped"]
+
+
+def test_corrupt_state_with_orphan_worker_refuses(tmp_path):
+    config = tmp_path / "config.json"
+    (tmp_path / "setup-job.json").write_text("{broken")
+    report = uninstall.stop_all_tasks(config, command_reader=lambda _: None,
+                                     group_reader=lambda: [(8, 7, "python /env/bootstrap.py setup-worker")])
+    assert not report["all_stopped"] and report["unidentified_pids"] == [8]
+
+
+def test_active_bridge_real_flock_does_not_reenter(tmp_path):
+    # Run a real lock in a bounded child; the injected signal must never reach
+    # the OS. A nested flock would exceed the outer subprocess timeout.
+    import subprocess
+    import sys
+    script = r'''
+import json,sys
+from pathlib import Path
+from micforyou.control import RuntimeState, save_state
+from micforyou.uninstall import stop_all_tasks
+config=Path(sys.argv[1]); token="bridge-test-token"
+state=RuntimeState("RUNNING", 7, "/env/run_real_tse_bridge.py", None, "now", str(config), None, None, control_token=token)
+save_state(state, config.parent/"state.json")
+signals=[]
+report=stop_all_tasks(config, timeout_seconds=.1,
+ command_reader=lambda p: None if signals else "python /env/run_real_tse_bridge.py --control-token bridge-test-token",
+ signal_sender=signals.append)
+assert report["all_stopped"] and signals == [7], report
+'''
+    result = subprocess.run([sys.executable, "-c", script, str(tmp_path / "config.json")],
+                            capture_output=True, text=True, timeout=3)
+    assert result.returncode == 0, result.stderr
+
+
+def test_cli_stop_failure_does_not_delete(home, tmp_path, monkeypatch):
+    from micforyou import cli, control
+    locations = make_locations(home)
+    config = locations["support_dir"] / "config.json"
+    work = tmp_path / "executor-work"
+    work.mkdir(mode=0o700)
+    (work / "ready").write_text('{"companion_pids": []}')
+    executor = work / "executor"
+    monkeypatch.setattr(cli, "default_config_path", lambda: config)
+    monkeypatch.setattr(control, "process_arguments", lambda _: [str(executor), "--plan", "foo"])
+    monkeypatch.setattr(uninstall, "stop_all_tasks", lambda _: {"all_stopped": False})
+    monkeypatch.setattr(uninstall, "execute_user_cleanup", lambda *_: pytest.fail("cleanup before handoff"))
+    args = build_parser().parse_args(["uninstall", "--config", str(config), "--result", str(work / "plan.json"),
+                                     "--executor-pid", "7", "--executor-path", str(executor)])
+    with pytest.raises(ValueError, match="停止"):
+        args.func(args)
+    assert (locations["support_dir"] / "registrations/voice.wav").read_bytes() == b"voice"
+    assert not uninstall.uninstall_marker_path().exists()
+
+
+def test_cli_handoff_keeps_data_and_lease_until_executor(home, tmp_path, monkeypatch):
+    from micforyou import cli, control
+    locations = make_locations(home)
+    config = locations["support_dir"] / "config.json"
+    work = tmp_path / "executor-work"
+    work.mkdir(mode=0o700)
+    (work / "ready").write_text('{"companion_pids": []}')
+    executor = work / "executor"
+    monkeypatch.setattr(cli, "default_config_path", lambda: config)
+    monkeypatch.setattr(control, "process_arguments", lambda _: [str(executor), "--plan", "foo"])
+    monkeypatch.setattr(uninstall, "stop_all_tasks", lambda _: {"all_stopped": True})
+    original = uninstall.build_plan
+    monkeypatch.setattr(uninstall, "build_plan", lambda **kwargs: original(**kwargs, home=home, receipt_runner=fake_receipts()))
+    result = work / "plan.json"
+    args = build_parser().parse_args(["uninstall", "--config", str(config), "--result", str(result),
+                                     "--executor-pid", "7", "--executor-path", str(executor)])
+    args.func(args)
+    payload = json.loads(result.read_text())
+    assert payload["stopped"]["all_stopped"]
+    assert uninstall.uninstall_in_progress(config.parent)
+    uninstall.execute_user_cleanup(payload["plan"], home=home)
+    assert uninstall.uninstall_in_progress(config.parent)  # data removed, lease still active
+    uninstall.end_uninstall_window()
+    assert not uninstall.uninstall_in_progress(config.parent)
+
+
+def test_executor_missing_or_not_ready_preserves_data(home, tmp_path, monkeypatch):
+    from micforyou import cli, control
+    locations = make_locations(home)
+    config = locations["support_dir"] / "config.json"
+    monkeypatch.setattr(cli, "default_config_path", lambda: config)
+    monkeypatch.setattr(control, "process_arguments", lambda _: None)
+    args = build_parser().parse_args(["uninstall", "--config", str(config), "--result", str(tmp_path / "plan.json"),
+                                     "--executor-pid", "7", "--executor-path", str(tmp_path / "executor")])
+    with pytest.raises(ValueError, match="执行器"):
+        args.func(args)
+    assert (locations["support_dir"] / "registrations/voice.wav").exists()
+    monkeypatch.setattr(control, "process_arguments", lambda _: [str(tmp_path / "executor"), "--plan", "foo"])
+    with pytest.raises(ValueError, match="准备"):
+        args.func(args)
+    assert (locations["support_dir"] / "registrations/voice.wav").exists()
+
+
+def test_barrier_waiting_starter_rechecks_lease(tmp_path):
+    import threading
+    started = threading.Event()
+    finished = threading.Event()
+    outcomes = []
+    def start():
+        started.set()
+        try:
+            with uninstall.startup_guard():
+                outcomes.append("started")
+        except ValueError:
+            outcomes.append("refused")
+        finally:
+            finished.set()
+    with uninstall.coordination_lock():
+        thread = threading.Thread(target=start)
+        thread.start()
+        assert started.wait(1)
+        uninstall.uninstall_marker_path().write_text("manual lease")
+        assert not finished.wait(.05)
+    assert finished.wait(2)
+    thread.join()
+    assert outcomes == ["refused"]
+
+
+def test_stale_executor_lease_allows_keep_data_reinstall(tmp_path, monkeypatch):
+    from micforyou import control
+    monkeypatch.setattr(control, "process_arguments", lambda _: None)
+    uninstall.begin_uninstall_window(executor_pid=7, executor_path="/tmp/dead/executor")
+    with uninstall.startup_guard():
+        assert not uninstall.uninstall_marker_path().exists()
+
+
+def test_real_argv_preserves_space_paths(tmp_path):
+    import subprocess
+    import sys
+    from micforyou.control import process_arguments
+    config = tmp_path / "Application Support" / "config.json"
+    process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(.3)",
+                                "--config", str(config), "--token", "test-token"])
+    try:
+        argv = process_arguments(process.pid)
+        assert argv[argv.index("--config") + 1] == str(config)
+    finally:
+        process.wait(timeout=3)
+    job = {"token": "t", "process_marker": "/App Resources/bootstrap.py", "config_path": str(config)}
+    assert uninstall.worker_identity(["python", "/App Resources/bootstrap.py", "setup-worker",
+                                     "--config", str(config), "--token", "t"], job, config)
+
+
+def test_foreign_abort_cannot_release_active_executor(monkeypatch):
+    from micforyou import control
+    monkeypatch.setattr(control, "process_arguments", lambda _: ["/tmp/executor"])
+    uninstall.begin_uninstall_window(executor_pid=7, executor_path="/tmp/executor")
+    with pytest.raises(ValueError, match="不属于"):
+        uninstall.end_uninstall_window(executor_pid=8)
+    assert uninstall.uninstall_in_progress()
+    uninstall.end_uninstall_window(executor_pid=7)
+
+
+def test_crashed_executor_does_not_unlock_while_privileged_helper_lives(monkeypatch):
+    from micforyou import control
+    monkeypatch.setattr(control, "process_arguments", lambda _: None)
+    monkeypatch.setattr(control, "process_command", lambda _: "/bin/sh -c work=/tmp/micforyou-uninstall-test; waiting")
+    uninstall.begin_uninstall_window(executor_pid=7, executor_path="/tmp/micforyou-uninstall-test/executor",
+                                     companion_pids=[8])
+    assert uninstall.uninstall_in_progress()
+    monkeypatch.setattr(control, "process_command", lambda _: None)
+    assert not uninstall.uninstall_in_progress()

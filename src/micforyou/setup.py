@@ -17,6 +17,7 @@ from .audio import list_devices, record_input, resolve_device
 from .enrollment_quality import EnrollmentQualityError, check_enrollment_audio
 from .product import ProductConfig, save_config
 from .runtime_control import state_lock
+from .uninstall import coordinated_start
 from .recommendation import BenchmarkCandidate, recommend
 
 # Single source for the registration capture length shown in the UI, used by
@@ -71,6 +72,7 @@ def setup_status(config_path: Path) -> dict:
     return job
 
 
+@coordinated_start
 def start_setup(config_path: Path, input_device: str) -> dict:
     from .uninstall import uninstall_in_progress
     if uninstall_in_progress(config_path.parent):
@@ -96,7 +98,8 @@ def start_setup(config_path: Path, input_device: str) -> dict:
                                        start_new_session=True, cwd=root)
         # The worker waits for this initial record before writing its progress.
         job = {"status": "RUNNING", "stage": "准备录音", "progress": 0,
-               "pid": process.pid, "token": token, "log_path": str(log_path)}
+               "pid": process.pid, "token": token, "log_path": str(log_path),
+               "process_marker": str(root / "bootstrap.py"), "config_path": str(config_path)}
         save_job(config_path, job)
         return job
 

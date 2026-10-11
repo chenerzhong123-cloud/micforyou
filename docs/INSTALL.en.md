@@ -49,6 +49,8 @@ The preferred path is the in-app entry: open MicForYou's Settings and choose **"
 - The shared BlackHole 2ch driver is **kept** by default (other audio software may use it); removing it requires administrator authorization and a Mac restart.
 - Restore your everyday microphone as the input method's input device before uninstalling; the app is moved to the Trash, and the space is freed only after the Trash is emptied.
 
+Uninstall first verifies targets and prepares the executor and permission to clear installation receipts, then freezes new tasks, confirms background tasks have exited, and waits for the app to quit. Canceled authorization, an unready executor, or unverifiable task shutdown leaves the app and voice data intact. The coordination lease is released even when voice data is retained; a later launch checks and recovers a crashed executor lease. Partial deletion failures are listed individually; recordings already deleted cannot be restored automatically.
+
 Manual uninstall when the app cannot launch:
 
 1. Choose "结束" (End) and quit the menu-bar app.

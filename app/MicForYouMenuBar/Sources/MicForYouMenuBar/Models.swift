@@ -136,7 +136,12 @@ struct UninstallInventory: Decodable {
             let reason: String?
         }
         let targets: [Item]
-        let keep: [Item]
+        struct KeepItem: Decodable {
+            let path: String
+            let reason: String
+        }
+        let schema: String
+        let keep: [KeepItem]
     }
 
     enum CodingKeys: String, CodingKey {
@@ -146,6 +151,10 @@ struct UninstallInventory: Decodable {
 
     init(from decoder: Decoder) throws {
         let raw = try Raw(from: decoder)
+        guard raw.schema == "micforyou/uninstall-plan/1" else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                    debugDescription: "unsupported uninstall plan"))
+        }
         let labels = ["app": "应用本体（含内置模型与运行环境）",
                       "old_app": "旧位置的应用副本",
                       "support_dir": "声音注册、个人模型、配置与报告",

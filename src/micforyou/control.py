@@ -96,7 +96,7 @@ def process_command(pid: int) -> str | None:
         return None
     try:
         completed = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "command="],
+            ["ps", "-ww", "-p", str(pid), "-o", "command="],
             capture_output=True,
             check=True,
             text=True,
@@ -107,6 +107,36 @@ def process_command(pid: int) -> str | None:
     value = completed.stdout.strip()
     return value or None
 
+
+
+def process_arguments(pid: int) -> list[str] | None:
+    """Read actual argv; ps display text loses quoting around paths with spaces."""
+    if pid <= 0:
+        return None
+    import sys
+    try:
+        if sys.platform != "darwin":
+            return [p.decode() for p in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0") if p]
+        import ctypes
+        libc = ctypes.CDLL(None, use_errno=True)
+        # CTL_KERN / KERN_PROCARGS2, from the platform's sys/sysctl.h.
+        mib = (ctypes.c_int * 3)(1, 49, pid)
+        size = ctypes.c_size_t()
+        if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) or not 4 < size.value <= 1024 * 1024:
+            return None
+        buffer = ctypes.create_string_buffer(size.value)
+        if libc.sysctl(mib, 3, buffer, ctypes.byref(size), None, 0):
+            return None
+        raw = buffer.raw[:size.value]
+        argc = ctypes.c_int.from_buffer_copy(raw[:4]).value
+        tail = raw[4:]
+        tail = tail[tail.index(b"\0"):].lstrip(b"\0")
+        values = tail.split(b"\0")[:argc]
+        if argc < 1 or len(values) != argc:
+            return None
+        return [p.decode() for p in values]
+    except (OSError, ValueError, UnicodeError):
+        return None
 
 def owns_process(
     state: RuntimeState,

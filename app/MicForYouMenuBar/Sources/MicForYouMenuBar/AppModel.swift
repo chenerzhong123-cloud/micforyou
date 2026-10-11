@@ -24,7 +24,7 @@ final class AppModel: ObservableObject {
     @Published var driverInstalled = false
     var isBundled: Bool { client?.isBundled == true }
     var setupRunning: Bool { setupJob?.status == "RUNNING" }
-    var isWorking: Bool { busy || setupRunning }
+    var isWorking: Bool { busy || setupRunning || uninstallBusy }
 
     private var client: CLIClient?
 
@@ -37,7 +37,7 @@ final class AppModel: ObservableObject {
     }
 
     func refresh() async {
-        guard !busy, let client else { return }
+        guard !busy, !uninstallBusy, let client else { return }
         do {
             let value = try await client.run(["status"], as: ProductStatus.self)
             status = value
@@ -52,7 +52,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshDevices() async {
-        guard let client else { return }
+        guard let client, !uninstallBusy else { return }
         do {
             let values = try await client.run(["devices"], as: [AudioDevice].self)
             driverInstalled = values.contains { $0.name == "BlackHole 2ch" }
@@ -84,6 +84,7 @@ final class AppModel: ObservableObject {
             errorMessage = "请在系统设置 → 隐私与安全性 → 麦克风中允许 MicForYou 使用麦克风。"
             return
         }
+        guard !uninstallBusy else { return }
         if !client.isBundled {
             await perform("enroll")
             return
@@ -103,6 +104,7 @@ final class AppModel: ObservableObject {
     /// shows its progress; a finished (possibly stale) job never blocks a new
     /// attempt — the sheet starts from the preview state instead.
     func openEnrollment() {
+        guard !uninstallBusy else { return }
         if setupJob?.status == "RUNNING" {
             enrollmentAttemptToken = setupJob?.token
         } else {
@@ -114,7 +116,7 @@ final class AppModel: ObservableObject {
     /// Fast setup-status polling while the registration sheet is visible; the
     /// 3-second countdown needs sub-second updates from real backend timing.
     func refreshSetup() async {
-        guard let client, client.isBundled else { return }
+        guard let client, client.isBundled, !uninstallBusy else { return }
         if let job = try? await client.run(["setup-status"], as: SetupJob.self) {
             setupJob = job
         }
@@ -123,7 +125,7 @@ final class AppModel: ObservableObject {
     // MARK: - Uninstall
 
     func loadUninstallPlan() async {
-        guard let client else { return }
+        guard let client, !uninstallBusy else { return }
         var arguments = ["uninstall", "--plan-only"]
         if uninstallKeepData { arguments.append("--keep-data") }
         if uninstallRemoveDriver { arguments.append("--remove-driver") }
@@ -136,46 +138,78 @@ final class AppModel: ObservableObject {
     }
 
     func performUninstall() async {
-        guard let client, !uninstallBusy else { return }
+        guard let client, !busy, !uninstallBusy else { return }
         uninstallBusy = true
         defer { uninstallBusy = false }
+        let work = FileManager.default.temporaryDirectory
+            .appending(path: "micforyou-uninstall-\(UUID().uuidString)")
+        var executorProcess: Process?
+        var handedOff = false
+        defer {
+            if !handedOff { try? FileManager.default.removeItem(at: work) }
+        }
         do {
-            // Stop tasks, delete current-user data, and write the executor plan.
-            let work = FileManager.default.temporaryDirectory
-                .appending(path: "micforyou-uninstall-\(UUID().uuidString)")
-            try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
-            let planURL = work.appending(path: "plan.json")
-            var arguments = ["uninstall", "--result", planURL.path]
-            if uninstallKeepData { arguments.append("--keep-data") }
-            if uninstallRemoveDriver { arguments.append("--remove-driver") }
-            _ = try await client.run(arguments)
-
-            // Copy the native executor out of the app bundle so it survives
-            // the app's own deletion, then quit and let it take over.
+            try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true,
+                                                     attributes: [.posixPermissions: 0o700])
             guard let resources = Bundle.main.resourceURL else {
                 throw CLIError.executableMissing("App Resources")
             }
-            let executorSource = resources.appending(path: "UninstallExecutor")
             let executor = work.appending(path: "executor")
-            try FileManager.default.copyItem(at: executorSource, to: executor)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executor.path)
-
+            try FileManager.default.copyItem(at: resources.appending(path: "UninstallExecutor"), to: executor)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executor.path)
+            var options: [String] = []
+            if uninstallKeepData { options.append("--keep-data") }
+            if uninstallRemoveDriver { options.append("--remove-driver") }
+            let initial = work.appending(path: "inventory.json")
+            let final = work.appending(path: "plan.json")
+            _ = try await client.run(["uninstall", "--plan-only", "--result", initial.path] + options)
             let process = Process()
             process.executableURL = executor
-            process.arguments = ["--plan", planURL.path]
+            process.arguments = ["--prepare-plan", initial.path, "--plan", final.path,
+                                 "--parent-pid", String(ProcessInfo.processInfo.processIdentifier)]
             process.standardInput = FileHandle.nullDevice
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
-            process.qualityOfService = .userInitiated
             try process.run()
+            executorProcess = process
+            let deadline = Date().addingTimeInterval(130)
+            while !FileManager.default.fileExists(atPath: work.appending(path: "ready").path) {
+                guard process.isRunning, Date() < deadline else {
+                    let detail = (try? String(contentsOf: work.appending(path: "error"), encoding: .utf8))
+                        ?? "卸载执行器未就绪或授权取消；未删除个人数据。"
+                    throw NSError(domain: "MicForYou.Uninstall", code: 1,
+                                  userInfo: [NSLocalizedDescriptionKey: detail])
+                }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            _ = try await client.run(["uninstall", "--result", final.path,
+                                      "--executor-pid", String(process.processIdentifier),
+                                      "--executor-path", executor.path] + options)
+            guard process.isRunning else {
+                throw NSError(domain: "MicForYou.Uninstall", code: 2,
+                              userInfo: [NSLocalizedDescriptionKey: "执行器接管失败；未删除个人数据。"])
+            }
+            handedOff = true
             NSApplication.shared.terminate(nil)
         } catch {
+            try? Data().write(to: work.appending(path: "abort"), options: .atomic)
+            if let process = executorProcess {
+                let deadline = Date().addingTimeInterval(5)
+                while process.isRunning && Date() < deadline {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                if process.isRunning { process.terminate() }
+            }
+            // Startup remains frozen until the executor has stopped waiting.
+            if let process = executorProcess {
+                _ = try? await client.run(["uninstall", "--abort", "--executor-pid", String(process.processIdentifier)])
+            }
             uninstallError = error.localizedDescription
         }
     }
 
     func cancelSetup() async {
-        guard let client, setupRunning else { return }
+        guard let client, setupRunning, !uninstallBusy else { return }
         do { _ = try await client.run(["setup-cancel"]) }
         catch { errorMessage = error.localizedDescription }
     }
