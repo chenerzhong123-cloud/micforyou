@@ -297,3 +297,50 @@ def test_pruning_never_deletes_referenced_or_pending_attempts(tmp_path):
     assert "attempt06" in remaining       # newest (pending warning)
     assert len(remaining) <= performance.MAX_ATTEMPT_RECORDS + 1
     assert "attempt02" not in remaining   # old, unreferenced: pruned
+
+
+def test_teardown_crash_after_complete_result_is_recovered(tmp_path, monkeypatch):
+    """A measurement child that dies at C++ teardown AFTER writing a complete
+    result must not fail the attempt — the file is trusted, the recovery is
+    recorded, and downstream validation still applies."""
+    import subprocess
+    setup, config_path, folder, bundle, active = active_fixture(tmp_path, monkeypatch)
+    spawn_worker(setup, config_path, "retestworker07")
+
+    def crashing_run(command, **kwargs):
+        name = Path(command[1]).name
+        target = Path(command[command.index("--result") + 1])
+        if name == "benchmark_onnx_tse.py":
+            target.write_text(json.dumps(benchmark_payload()))
+            raise subprocess.CalledProcessError(returncode=-6, cmd=command,
+                                                 output="", stderr="libc++abi")
+        if name == "measure_bridge_latency.py":
+            target.write_text(json.dumps(latency_report()))
+            return None
+        pytest.fail(str(command))
+
+    monkeypatch.setattr(setup.subprocess, "run", crashing_run)
+    setup.run_worker(config_path, "Mic", "retestworker07", stage="performance")
+    # The run completed and committed despite the crash-after-result child.
+    assert setup.read_job(config_path)["status"] == "READY"
+    records = sorted((config_path.parent / "performance-attempts").glob("attempt-*.json"))
+    attempt = json.loads(records[-1].read_text())
+    assert "exit_crash_recovered" in attempt
+
+    # A crash WITHOUT a usable result file still fails the attempt.
+    spawn_worker(setup, config_path, "retestworker08")
+
+    def crashing_run_no_file(command, **kwargs):
+        name = Path(command[1]).name
+        if name == "benchmark_onnx_tse.py":
+            target = Path(command[command.index("--result") + 1])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("{ not json")  # corrupt result, then "crash"
+            raise subprocess.CalledProcessError(returncode=-6, cmd=command,
+                                                 output="", stderr="libc++abi")
+        pytest.fail(str(command))
+
+    monkeypatch.setattr(setup.subprocess, "run", crashing_run_no_file)
+    with pytest.raises(subprocess.CalledProcessError):
+        setup.run_worker(config_path, "Mic", "retestworker08", stage="performance")
+    assert setup.read_job(config_path)["status"] == "FAILED"

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -461,13 +462,12 @@ def main() -> None:
     args.result.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print(f"gate: {gate}")
     print(f"result json: {args.result}")
-    if args.provider == "coreml":
-        # CoreML EP teardown can crash at process exit (recursive_mutex) after
-        # all results are safely written; skip interpreter shutdown.
-        import os
-
-        sys.stdout.flush()
-        os._exit(0)
+    sys.stdout.flush()
+    # ORT teardown can crash at process exit (recursive_mutex) after all
+    # results are safely written — observed on both CoreML and CPU EPs.
+    # Exit deterministically once the result file is on disk, matching
+    # measure_bridge_latency.py.
+    os._exit(0)
 
 
 if __name__ == "__main__":

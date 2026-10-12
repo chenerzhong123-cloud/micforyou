@@ -511,14 +511,34 @@ def run_worker(config_path: Path, input_device: str, token: str,
             perf_common = ["--repo", str(candidate.model_repo), "--model-dir", str(candidate.model_dir),
                            "--enrollment", str(candidate.enrollment),
                            "--enrollment-seconds", str(candidate.enrollment_seconds)]
-            subprocess.run([sys.executable,
-                            str(root / "tools" / "inference" / "benchmark_onnx_tse.py"),
-                            *perf_common,
-                            "--onnx", str(candidate.onnx_model),
-                            "--threads", "1", "--frames", "8", "16", "24",
-                            "--audio-seconds", "10",
-                            "--result", str(attempt_dir / "benchmark.json")],
-                           cwd=root, check=True)
+
+            def run_with_result_recovery(command, result_path):
+                """Measurement children occasionally die at C++ teardown
+                (ORT recursive_mutex race) *after* writing a complete result.
+                Trust a parseable result file and record the recovery; an
+                unreadable or invalid result still fails the attempt, and
+                downstream validation (eligible_frames / classify_latency)
+                still applies in full."""
+                try:
+                    subprocess.run(command, cwd=root, check=True)
+                except subprocess.CalledProcessError as error:
+                    try:
+                        recovered = json.loads(result_path.read_text())
+                    except (OSError, json.JSONDecodeError) as parse_error:
+                        raise error from parse_error
+                    if not isinstance(recovered, dict):
+                        raise error
+                    attempt["exit_crash_recovered"] = str(error)[:160]
+
+            run_with_result_recovery(
+                [sys.executable,
+                 str(root / "tools" / "inference" / "benchmark_onnx_tse.py"),
+                 *perf_common,
+                 "--onnx", str(candidate.onnx_model),
+                 "--threads", "1", "--frames", "8", "16", "24",
+                 "--audio-seconds", "10",
+                 "--result", str(attempt_dir / "benchmark.json")],
+                attempt_dir / "benchmark.json")
             frames_choices = performance.eligible_frames(
                 json.loads((attempt_dir / "benchmark.json").read_text()))
             if not frames_choices:
@@ -539,10 +559,6 @@ def run_worker(config_path: Path, input_device: str, token: str,
                 terminal_written = True
                 raise ValueError("no eligible frames candidate; voice candidate kept")
 
-            def run_latency(script, arguments):
-                subprocess.run([sys.executable, str(root / "tools" / "inference" / script),
-                                *perf_common, *arguments], cwd=root, check=True)
-
             explored = []
             best = None
             for index, frames in enumerate(frames_choices, start=1):
@@ -551,11 +567,14 @@ def run_worker(config_path: Path, input_device: str, token: str,
                                 0.6 + 0.3 * (len(explored) + 1) / (len(frames_choices) * 3),
                                 phase="checking_performance")
                     report = attempt_dir / f"latency-{frames}-{prefill}.json"
-                    run_latency("measure_bridge_latency.py",
-                                ["--backend", "onnx", "--onnx", str(candidate.onnx_model),
-                                 "--onnx-threads", "1", "--frames-per-chunk", str(frames),
-                                 "--duration", "30", "--prefill-ms", str(prefill),
-                                 "--result", str(report)])
+                    run_with_result_recovery(
+                        [sys.executable,
+                         str(root / "tools" / "inference" / "measure_bridge_latency.py"),
+                         *perf_common,
+                         "--backend", "onnx", "--onnx", str(candidate.onnx_model),
+                         "--onnx-threads", "1", "--frames-per-chunk", str(frames),
+                         "--duration", "30", "--prefill-ms", str(prefill),
+                         "--result", str(report)], report)
                     verdict, reason, metrics = performance.classify_latency(
                         json.loads(report.read_text()))
                     item = {"frames_per_chunk": frames, "prefill_ms": float(prefill),
