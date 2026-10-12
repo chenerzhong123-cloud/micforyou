@@ -12,7 +12,7 @@ from micforyou.performance import (
     eligible_frames,
     validate_verdict,
 )
-from micforyou.product import ProductConfig
+from micforyou.product import ProductConfig, load_config, save_config
 
 
 def latency_report(**changes):
@@ -30,6 +30,21 @@ def benchmark_payload(frames_rtf):
          "input_samples": 480000, "output_samples": 480000,
          "nonfinite_samples": 0, "error": None, "length_match": True}
         for frames, rtf in frames_rtf]}
+
+
+def registered_config(root: Path, name: str = "c0ffee", **changes) -> ProductConfig:
+    """A bundle-managed config whose voice lives in registrations/<name>."""
+    folder = root / "registrations" / name
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "core.onnx").write_bytes(b"onnx-" + name.encode())
+    (folder / "enrollment.wav").write_bytes(b"wav-" + name.encode())
+    values = dict(input_device="Mic", model_repo=root / "vendor",
+                  model_dir=root / "models", enrollment=folder / "enrollment.wav",
+                  onnx_model=folder / "core.onnx",
+                  runtime_python=root / "python", project_root=root,
+                  bundle_managed=True)
+    values.update(changes)
+    return ProductConfig(**values)
 
 
 def config(tmp_path: Path, **changes) -> ProductConfig:
@@ -126,8 +141,8 @@ def test_choose_best_prefers_pass_then_fastest_warning():
 
 
 def test_validate_verdict_rejects_hostile_shapes(tmp_path: Path):
-    write_voice_files(tmp_path)
-    good = pass_verdict(config(tmp_path), None)
+    cfg = registered_config(tmp_path)
+    good = pass_verdict(cfg, None)
     assert validate_verdict(good) is None
     for changes, why in [
         ({"verdict": "PASS"}, "verdict"),
@@ -146,117 +161,165 @@ def test_validate_verdict_rejects_hostile_shapes(tmp_path: Path):
 
 
 def test_admission_requires_verdict_for_bundled_configs(tmp_path: Path):
-    cfg = config(tmp_path)
-    write_voice_files(tmp_path)
-    assert admission(cfg, None, tmp_path / "config.json") == ("deny", "unchecked")
+    cfg = registered_config(tmp_path)
+    path = tmp_path / "config.json"
+    save_config(cfg, path)
+    assert admission(cfg, None, path) == ("deny", "unchecked")
 
     # A verdict written by an older build (no frames/prefill binding, no
     # enrollment/build identity) must not silently authorize the new build.
-    performance.write_verdict(tmp_path / "config.json",
-                              {"verdict": "pass", "identity": {
-                                  "input_device": "Mic", "onnx_sha256": None,
-                                  "app_version": "dev"}})
-    assert admission(cfg, None, tmp_path / "config.json") == ("deny", "invalid_verdict")
+    performance.write_candidate_verdict(cfg.enrollment.parent,
+                                        {"verdict": "pass", "identity": {
+                                            "input_device": "Mic", "onnx_sha256": None,
+                                            "app_version": "dev"}})
+    assert admission(cfg, None, path) == ("deny", "invalid_verdict")
 
-    performance.write_verdict(tmp_path / "config.json", pass_verdict(cfg, None))
-    assert admission(cfg, None, tmp_path / "config.json") == ("allow", None)
+    performance.write_candidate_verdict(cfg.enrollment.parent, pass_verdict(cfg, None))
+    assert admission(cfg, None, path) == ("allow", None)
 
-    performance.write_verdict(tmp_path / "config.json",
-                              pass_verdict(cfg, None, verdict="latency_warning",
-                                           approved_trial=False))
-    assert admission(cfg, None, tmp_path / "config.json") == ("warn_trial", "high_latency")
+    performance.write_candidate_verdict(
+        cfg.enrollment.parent,
+        pass_verdict(cfg, None, verdict="latency_warning", approved_trial=False))
+    assert admission(cfg, None, path) == ("warn_trial", "high_latency")
 
-    performance.write_verdict(tmp_path / "config.json",
-                              pass_verdict(cfg, None, verdict="latency_warning",
-                                           approved_trial=True))
-    assert admission(cfg, None, tmp_path / "config.json")[0] == "allow"
+    performance.write_candidate_verdict(
+        cfg.enrollment.parent,
+        pass_verdict(cfg, None, verdict="latency_warning", approved_trial=True))
+    assert admission(cfg, None, path)[0] == "allow"
 
-    changed = config(tmp_path, input_device="Other Mic")
-    assert admission(changed, None, tmp_path / "config.json") == ("deny", "device_changed")
+    changed = registered_config(tmp_path, name="c0ffee", input_device="Other Mic")
+    assert admission(changed, None, path) == ("deny", "device_changed")
 
-    dev = config(tmp_path, bundle_managed=False)
-    assert admission(dev, None, tmp_path / "config.json") == ("allow", None)
+    dev = registered_config(tmp_path, name="c0ffee", bundle_managed=False)
+    assert admission(dev, None, path) == ("allow", None)
 
 
 def test_admission_binds_model_enrollment_params_and_build(tmp_path: Path):
     (tmp_path / "bundle-manifest.json").write_text(
-        json.dumps({"version": "0.2.3", "build": "7"}))
-    cfg = config(tmp_path)
-    write_voice_files(tmp_path)
-    performance.write_verdict(tmp_path / "config.json", pass_verdict(cfg, tmp_path))
-    assert admission(cfg, tmp_path, tmp_path / "config.json")[0] == "allow"
+        json.dumps({"version": "0.2.3", "build": "8"}))
+    cfg = registered_config(tmp_path)
+    path = tmp_path / "config.json"
+    save_config(cfg, path)
+    performance.write_candidate_verdict(cfg.enrollment.parent, pass_verdict(cfg, tmp_path))
+    assert admission(cfg, tmp_path, path)[0] == "allow"
 
-    (tmp_path / "core.onnx").write_bytes(b"model-b")
-    assert admission(cfg, tmp_path, tmp_path / "config.json") == ("deny", "model_changed")
-    write_voice_files(tmp_path)
+    (cfg.onnx_model).write_bytes(b"model-b")
+    assert admission(cfg, tmp_path, path) == ("deny", "model_changed")
+    (cfg.onnx_model).write_bytes(b"onnx-c0ffee")
 
-    (tmp_path / "voice.wav").write_bytes(b"other-recording")
-    assert admission(cfg, tmp_path, tmp_path / "config.json") == ("deny", "enrollment_changed")
-    write_voice_files(tmp_path)
+    (cfg.enrollment).write_bytes(b"other-recording")
+    assert admission(cfg, tmp_path, path) == ("deny", "enrollment_changed")
+    (cfg.enrollment).write_bytes(b"wav-c0ffee")
 
-    reparameterized = config(tmp_path, frames_per_chunk=24)
-    assert admission(reparameterized, tmp_path, tmp_path / "config.json") == (
-        "deny", "params_changed")
+    reparameterized = registered_config(tmp_path, frames_per_chunk=24)
+    assert admission(reparameterized, tmp_path, path) == ("deny", "params_changed")
 
     # Same version, different build: the old verdict no longer applies.
     (tmp_path / "bundle-manifest.json").write_text(
-        json.dumps({"version": "0.2.3", "build": "8"}))
-    assert admission(cfg, tmp_path, tmp_path / "config.json") == ("deny", "version_changed")
+        json.dumps({"version": "0.2.3", "build": "9"}))
+    assert admission(cfg, tmp_path, path) == ("deny", "version_changed")
     (tmp_path / "bundle-manifest.json").write_text(json.dumps({"version": "0.2.3"}))
-    assert admission(cfg, tmp_path, tmp_path / "config.json") == ("deny", "version_changed")
+    assert admission(cfg, tmp_path, path) == ("deny", "version_changed")
 
     # Missing model files fail closed.
-    (tmp_path / "core.onnx").unlink()
-    assert admission(cfg, tmp_path, tmp_path / "config.json") == ("deny", "model_missing")
+    (cfg.onnx_model).unlink()
+    assert admission(cfg, tmp_path, path) == ("deny", "model_missing")
 
 
 def test_pending_failure_never_overrides_active_authorization(tmp_path: Path):
     """P1: a new candidate's blocked verdict must not disable the old active."""
     (tmp_path / "bundle-manifest.json").write_text(
-        json.dumps({"version": "0.2.3", "build": "7"}))
-    cfg = config(tmp_path)
-    write_voice_files(tmp_path)
-    performance.write_verdict(tmp_path / "config.json", pass_verdict(cfg, tmp_path))
-    original_verdict = (tmp_path / "performance.json").read_text()
+        json.dumps({"version": "0.2.3", "build": "8"}))
+    active = registered_config(tmp_path, name="activeold")
+    path = tmp_path / "config.json"
+    save_config(active, path)
+    performance.write_candidate_verdict(active.enrollment.parent,
+                                        pass_verdict(active, tmp_path))
+    original_verdict = (active.enrollment.parent / "performance.json").read_text()
 
     # A later registration fails its performance check: its verdict lives in
-    # its own candidate folder, never next to the active config.
-    pending_folder = tmp_path / "registrations" / "newvoice01"
-    pending_folder.mkdir(parents=True)
-    pending_cfg = config(pending_folder)
-    write_voice_files(pending_folder)
-    performance.write_candidate_verdict(pending_folder, {
+    # its own candidate folder; the active folder is never touched.
+    pending = registered_config(tmp_path, name="newvoice01")
+    performance.write_candidate_verdict(pending.enrollment.parent, {
+        "schema": performance.VERDICT_SCHEMA,
         "verdict": "blocked", "reason": "fault", "approved_trial": False,
         "frames_per_chunk": 8, "prefill_ms": 100.0,
-        "identity": performance.identity("Mic", pending_cfg.onnx_model,
-                                         pending_cfg.enrollment, tmp_path),
+        "identity": performance.identity("Mic", pending.onnx_model,
+                                         pending.enrollment, tmp_path),
         "candidate_token": "newvoice01", "attempt_id": "attempt001",
         "latency_ms_p95": None})
+    performance.write_candidate_verdict(
+        pending.enrollment.parent,
+        pass_verdict(pending, tmp_path, verdict="latency_warning", approved_trial=False))
 
-    for _ in range(4):  # FAULT / insufficient speed / unapproved warning / cancel
-        assert admission(cfg, tmp_path, tmp_path / "config.json") == ("allow", None)
-    unapproved = pass_verdict(pending_cfg, tmp_path, verdict="latency_warning",
-                              approved_trial=False)
-    performance.write_candidate_verdict(pending_folder, unapproved)
-    assert admission(cfg, tmp_path, tmp_path / "config.json") == ("allow", None)
-    # The pending candidate itself is not admitted against the active config.
-    assert (tmp_path / "performance.json").read_text() == original_verdict
+    # FAULT / insufficient speed / unapproved warning / cancel on the pending
+    # side: the active registration stays allowed and its verdict untouched.
+    for _ in range(4):
+        assert admission(active, tmp_path, path) == ("allow", None)
+    assert (active.enrollment.parent / "performance.json").read_text() == original_verdict
 
 
-def test_commit_candidate_publishes_verdict_and_config_together(tmp_path: Path):
-    from micforyou.product import load_config
-    cfg = config(tmp_path)
-    write_voice_files(tmp_path)
-    verdict = pass_verdict(cfg, None)
-    performance.commit_candidate(cfg, tmp_path / "config.json", verdict)
-    saved = load_config(tmp_path / "config.json")
-    assert saved.enrollment == cfg.enrollment
-    published = performance.read_verdict(tmp_path / "config.json")
-    assert published["verdict"] == "pass"
-    assert published["frames_per_chunk"] == cfg.frames_per_chunk
-    assert admission(saved, None, tmp_path / "config.json") == ("allow", None)
-    assert not (tmp_path / "config.json.tmp").exists()
-    assert not (tmp_path / "performance.json.tmp").exists()
+def test_commit_failure_leaves_old_pair_intact_and_candidate_retestable(
+        tmp_path: Path, monkeypatch):
+    """P1 round 2: an interrupted commit must never mismatch the pair.
+
+    Injected failures at the verdict write or the final config rename each
+    leave the old config + old verdict complete and usable, with the new
+    candidate fully written and retestable/approvable.
+    """
+    (tmp_path / "bundle-manifest.json").write_text(
+        json.dumps({"version": "0.2.3", "build": "8"}))
+    old = registered_config(tmp_path, name="oldpair")
+    new = registered_config(tmp_path, name="newpair")
+    path = tmp_path / "config.json"
+    save_config(old, path)
+    performance.write_candidate_verdict(old.enrollment.parent, pass_verdict(old, tmp_path))
+    assert admission(old, tmp_path, path) == ("allow", None)
+    old_config_bytes = path.read_bytes()
+    old_verdict_bytes = (old.enrollment.parent / "performance.json").read_bytes()
+
+    verdict = pass_verdict(new, tmp_path)
+
+    # Failure at the final config rename: old pair intact, new candidate
+    # fully written (its verdict is part of its folder), still committable.
+    real_replace = Path.replace
+
+    def fail_config_rename(source, target):
+        if source.name == "config.json.tmp":
+            raise OSError("injected final config rename failure")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", fail_config_rename)
+    with pytest.raises(OSError):
+        performance.commit_candidate(new, path, verdict)
+    assert path.read_bytes() == old_config_bytes
+    assert (old.enrollment.parent / "performance.json").read_bytes() == old_verdict_bytes
+    assert admission(old, tmp_path, path) == ("allow", None)
+    stored = performance.read_candidate_verdict(new.enrollment.parent)
+    assert stored["verdict"] == "pass"
+
+    # After the transient failure clears, the same commit succeeds and the
+    # new pair is complete and allowed.
+    monkeypatch.setattr(Path, "replace", real_replace)
+    performance.commit_candidate(new, path, verdict)
+    assert admission(new, tmp_path, path) == ("allow", None)
+    assert load_config(path).enrollment == new.enrollment
+
+    # Failure while writing the new candidate's verdict: nothing changed at
+    # all — old pair intact, new folder has no verdict, commit raised.
+    monkeypatch.setattr(Path, "write_text", lambda self, *a, **k: (
+        (_ for _ in ()).throw(OSError("injected verdict write failure"))
+        if self.name == "performance.json" and self.parent.name == "newpair2"
+        else real_write_text(self, *a, **k)))
+    old2 = registered_config(tmp_path, name="oldpair2")
+    new2 = registered_config(tmp_path, name="newpair2")
+    save_config(old2, path)
+    performance.write_candidate_verdict(old2.enrollment.parent, pass_verdict(old2, tmp_path))
+    with pytest.raises(OSError):
+        performance.commit_candidate(new2, path, pass_verdict(new2, tmp_path))
+    assert load_config(path).enrollment == old2.enrollment
+    assert performance.read_candidate_verdict(new2.enrollment.parent) is None
+    assert admission(old2, tmp_path, path) == ("allow", None)
 
 
 def test_attempt_records_are_bounded(tmp_path: Path):
@@ -274,6 +337,9 @@ def test_attempt_folders_are_bounded(tmp_path: Path):
         (attempts / f"attempt{index:02d}").mkdir(parents=True)
     performance.prune_attempt_folders(folder)
     assert len(list(attempts.iterdir())) == performance.MAX_ATTEMPT_RECORDS
+
+
+real_write_text = Path.write_text
 
 
 def _retest_fixture(tmp_path: Path, monkeypatch) -> tuple:
@@ -328,10 +394,12 @@ def test_worker_performance_stage_reuses_voice_without_recording(
     setup.run_worker(config_path, "Mic", "retest-token", stage="performance")
     job = setup.read_job(config_path)
     assert job["status"] == "READY" and job["performance"] == "pass"
-    # The committed verdict lives next to the config; the candidate keeps its
-    # own copy, and attempt reports are per-attempt (no overwrites).
-    assert performance.read_verdict(config_path)["verdict"] == "pass"
+    # The committed verdict lives inside the candidate folder the config now
+    # points at — one folder, one pair.
     assert performance.read_candidate_verdict(folder)["verdict"] == "pass"
+    from micforyou.product import load_config
+    assert load_config(config_path).enrollment.parent == folder
+    assert admission(load_config(config_path), bundle, config_path) == ("allow", None)
     attempt_dir = folder / "attempts" / "retest-token"
     assert (attempt_dir / "benchmark.json").is_file()
     assert (attempt_dir / "latency-8-100.json").is_file()
@@ -371,7 +439,6 @@ def test_worker_records_terminal_attempts_for_failures(tmp_path: Path, monkeypat
     attempt = json.loads(records[-1].read_text())
     assert attempt["attempt_id"] == "failingtok"
     assert attempt["outcome"] == "blocked"
-    assert performance.read_verdict(config_path) is None  # active untouched
     assert performance.read_candidate_verdict(folder)["verdict"] == "blocked"
 
 
@@ -444,8 +511,7 @@ def test_start_retest_adopts_legacy_full_app_registration(tmp_path: Path, monkey
     assert pending["adopted_from_active"] is True
     assert setup.read_job(config_path)["status"] == "RUNNING"
     # Adoption never fabricates a pass verdict for the old record.
-    assert performance.read_verdict(config_path) is None
-    cfg = performance  # noqa: F841  (readability anchor)
+    assert performance.read_candidate_verdict(folder) is None
 
 
 def _approvable_candidate(tmp_path: Path, monkeypatch, bundle) -> tuple:
@@ -463,6 +529,7 @@ def _approvable_candidate(tmp_path: Path, monkeypatch, bundle) -> tuple:
     ident = performance.identity("Mic", folder / "core.onnx",
                                  folder / "enrollment.wav", bundle)
     performance.write_candidate_verdict(folder, {
+        "schema": performance.VERDICT_SCHEMA,
         "verdict": "latency_warning", "reason": "high_latency",
         "approved_trial": False, "frames_per_chunk": 16, "prefill_ms": 150.0,
         "identity": ident, "candidate_token": token, "attempt_id": "attempt001",
@@ -479,27 +546,50 @@ def test_approve_trial_enables_warning_candidate(tmp_path: Path, monkeypatch):
     bundle = tmp_path / "Bundle/Runtime"
     bundle.mkdir(parents=True)
     (bundle / "bundle-manifest.json").write_text(
-        json.dumps({"version": "0.2.3", "build": "7"}))
+        json.dumps({"version": "0.2.3", "build": "8"}))
     monkeypatch.setenv("MICFORYOU_BUNDLE_ROOT", str(bundle))
     setup, config_path, folder, token = _approvable_candidate(tmp_path, monkeypatch, bundle)
 
     result = setup.approve_trial(config_path)
     assert result["status"] == "READY" and result["approved_trial"] is True
     assert result["token"] == "windowtok"  # the waiting window completes
-    published = performance.read_verdict(config_path)
+    published = performance.read_candidate_verdict(folder)
     assert published["verdict"] == "latency_warning"
     assert published["approved_trial"] is True
-    saved = json.loads(config_path.read_text())
-    assert saved["frames_per_chunk"] == 16 and saved["prefill_ms"] == 150.0
-    assert saved["bundle_managed"] is True
+    saved = load_config(config_path)
+    assert saved.frames_per_chunk == 16 and saved.prefill_ms == 150.0
+    assert saved.bundle_managed is True
+    assert saved.enrollment.parent == folder
     job = setup.read_job(config_path)
     assert job["status"] == "READY" and job["token"] == "windowtok"
     assert job["performance"] == "latency_warning"
-    # Admission now allows the approved trial.
-    cfg = config(folder, input_device="Mic", frames_per_chunk=16, prefill_ms=150.0,
-                 enrollment=folder / "enrollment.wav")
-    decision, _ = admission(cfg, bundle, config_path)
-    assert decision == "allow"
+    # Admission now allows the approved trial against the active folder.
+    assert admission(saved, bundle, config_path) == ("allow", None)
+
+
+def test_approve_trial_commit_failure_is_retryable(tmp_path: Path, monkeypatch):
+    """An approve interrupted at the config rename stays WAITING and retryable."""
+    bundle = tmp_path / "Bundle/Runtime"
+    bundle.mkdir(parents=True)
+    (bundle / "bundle-manifest.json").write_text(
+        json.dumps({"version": "0.2.3", "build": "8"}))
+    monkeypatch.setenv("MICFORYOU_BUNDLE_ROOT", str(bundle))
+    setup, config_path, folder, token = _approvable_candidate(tmp_path, monkeypatch, bundle)
+    real_replace = Path.replace
+
+    def fail_config_rename(source, target):
+        if source.name == "config.json.tmp":
+            raise OSError("injected config write failure during approval")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", fail_config_rename)
+    with pytest.raises(OSError):
+        setup.approve_trial(config_path)
+    monkeypatch.setattr(Path, "replace", real_replace)
+    # The waiting job is untouched; the approval can simply be repeated.
+    assert setup.read_job(config_path)["status"] == "WAITING"
+    result = setup.approve_trial(config_path)
+    assert result["status"] == "READY"
 
 
 def test_approve_trial_rejects_races_and_stale_candidates(tmp_path: Path, monkeypatch):
@@ -556,4 +646,61 @@ def test_approve_trial_rejects_races_and_stale_candidates(tmp_path: Path, monkey
     with pytest.raises(ValueError, match="不一致"):
         setup.approve_trial(config_path)
 
-    assert performance.read_verdict(config_path) is None  # nothing committed
+    # Nothing was committed to an active config.
+    assert not config_path.exists()
+
+
+def test_status_ready_and_retest_mirror_admission(tmp_path: Path, monkeypatch, capsys):
+    """Menu "ready" and the retest entry must match what the backend allows."""
+    from micforyou import cli
+    from micforyou.audio import Device
+    from micforyou.product import save_config
+    bundle = tmp_path / "Bundle/Runtime"
+    bundle.mkdir(parents=True)
+    (bundle / "bundle-manifest.json").write_text(
+        json.dumps({"version": "0.2.3", "build": "8"}))
+    monkeypatch.setenv("MICFORYOU_BUNDLE_ROOT", str(bundle))
+    config_path = tmp_path / "userdata/config.json"
+    active = registered_config(tmp_path / "userdata", name="activereg")
+    save_config(active, config_path)
+    monkeypatch.setattr(cli, "product_status", lambda config: {
+        "ready": True, "input_device": config.input_device,
+        "output_device": config.output_device, "fault_policy": "silence",
+        "paths": {}, "device_errors": [], "system_default_input_unchanged": True})
+
+    def run_status():
+        args = cli.build_parser().parse_args(["status", "--config", str(config_path)])
+        cli.command_status(args)
+        return json.loads(capsys.readouterr().out)
+
+    # No verdict yet: not ready, but the active voice is adoptable for a
+    # no-reread retest — exactly the legacy-upgrade scenario.
+    value = run_status()
+    assert value["ready"] is False
+    assert value["admission"] == {"decision": "deny", "reason": "unchecked"}
+    assert value["retest_available"] is True
+
+    # A passing verdict for the current build: ready and allowed.
+    performance.write_candidate_verdict(active.enrollment.parent,
+                                        pass_verdict(active, bundle))
+    value = run_status()
+    assert value["ready"] is True and value["admission"]["decision"] == "allow"
+
+    # Same version, new build: verdict invalidated — ready flips to false
+    # with the retest entry still available (no re-recording needed).
+    (bundle / "bundle-manifest.json").write_text(
+        json.dumps({"version": "0.2.3", "build": "9"}))
+    value = run_status()
+    assert value["ready"] is False
+    assert value["admission"] == {"decision": "deny", "reason": "version_changed"}
+    assert value["retest_available"] is True
+
+    # An unapproved warning blocks ready but stays retestable.
+    performance.write_candidate_verdict(
+        active.enrollment.parent,
+        pass_verdict(active, bundle, verdict="latency_warning", approved_trial=False))
+    value = run_status()
+    assert value["ready"] is False
+    assert value["admission"]["decision"] == "warn_trial"
+    assert value["retest_available"] is True
+    _ = Device  # imported for parity with sibling fixtures

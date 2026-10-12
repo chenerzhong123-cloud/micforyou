@@ -36,3 +36,6 @@ runs/
 
 app/**/.build/
 app/**/.swiftpm/
+
+# Root-level SPM/checker build output (compiled check binaries).
+.build/

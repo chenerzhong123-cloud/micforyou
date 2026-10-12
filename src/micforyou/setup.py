@@ -166,14 +166,10 @@ def read_pending_candidate(config_path: Path) -> dict | None:
     return payload
 
 
-def adopt_active_registration(config_path: Path) -> dict | None:
-    """Turn an existing full-App registration into a retestable candidate.
-
-    Registrations made by builds without a separate performance verdict can
-    be re-checked without re-reading aloud: their recording and personal model
-    are already active. Adoption never claims the old record passed the new
-    gate — it only makes the retest path available.
-    """
+def adoption_candidate(config_path: Path) -> dict | None:
+    """Read-only: the pending candidate an existing active registration could
+    become (registrations from builds without a verdict can be re-checked
+    without re-reading aloud). Never claims the old record passed the gate."""
     try:
         config = load_config(config_path)
     except (OSError, ValueError):
@@ -185,10 +181,17 @@ def adopt_active_registration(config_path: Path) -> dict | None:
     folder = config.enrollment.parent
     if folder.parent.name != "registrations" or not _valid_candidate_token(folder.name):
         return None
-    pending = {"token": folder.name, "input_device": config.input_device,
-               "frames_per_chunk": config.frames_per_chunk,
-               "prefill_ms": config.prefill_ms, "adopted_from_active": True,
-               "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    return {"token": folder.name, "input_device": config.input_device,
+            "frames_per_chunk": config.frames_per_chunk,
+            "prefill_ms": config.prefill_ms, "adopted_from_active": True,
+            "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+
+
+def adopt_active_registration(config_path: Path) -> dict | None:
+    """Persist the adoption so the retest worker can operate on it."""
+    pending = adoption_candidate(config_path)
+    if pending is None:
+        return None
     pending_candidate_path(config_path).write_text(
         json.dumps(pending, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return pending
@@ -591,7 +594,9 @@ def run_worker(config_path: Path, input_device: str, token: str,
 
             if best["verdict"] == "pass":
                 # Atomic switch: only a passing (or explicitly approved)
-                # candidate ever replaces the active registration.
+                # candidate ever replaces the active registration. The
+                # verdict is already in the candidate's folder; committing is
+                # the single config rename inside commit_candidate.
                 previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
                 try:
                     performance.commit_candidate(candidate, config_path, verdict_payload)

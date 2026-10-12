@@ -379,7 +379,8 @@ def command_status(args: argparse.Namespace) -> None:
         write_json({"ready": False, "input_device": "", "output_device": BLACKHOLE_NAME,
                     "fault_policy": "silence", "device_errors": [],
                     "runtime": runtime_status(args.config),
-                    "quality_notice": "请完成首次声音设置", "configured": False}, args.output)
+                    "quality_notice": "请完成首次声音设置", "configured": False,
+                    "retest_available": False}, args.output)
         return
     config = load_config(args.config)
     if os.environ.get("MICFORYOU_BUNDLE_ROOT") and not config.bundle_managed:
@@ -387,13 +388,25 @@ def command_status(args: argparse.Namespace) -> None:
                     "output_device": BLACKHOLE_NAME, "fault_policy": config.fault_policy,
                     "device_errors": [], "runtime": runtime_status(args.config),
                     "quality_notice": "升级到完整 App 后，请重新注册声音；旧录音和模型会保留",
-                    "configured": True, "needs_bundle_setup": True}, args.output)
+                    "configured": True, "needs_bundle_setup": True,
+                    "retest_available": False}, args.output)
         return
-    from .performance import read_verdict
-    verdict = read_verdict(args.config)
+    from .performance import admission, read_active_verdict
+    from .setup import adoption_candidate, read_pending_candidate
+    bundle_root = os.environ.get("MICFORYOU_BUNDLE_ROOT")
+    decision, reason = admission(config, Path(bundle_root) if bundle_root else None,
+                                 args.config)
+    verdict = read_active_verdict(config)
+    base = product_status(config)
+    # "ready" mirrors admission: the menu must never claim the user can start
+    # when the backend would refuse (and vice versa).
+    base["ready"] = bool(base["ready"]) and decision == "allow"
+    base["admission"] = {"decision": decision, "reason": reason}
+    base["retest_available"] = bool(
+        read_pending_candidate(args.config) or adoption_candidate(args.config))
     write_json(
         {
-            **product_status(config),
+            **base,
             "runtime": runtime_status(args.config),
             "quality_notice": (
                 "Trial version: partial filtering only; target-absent "

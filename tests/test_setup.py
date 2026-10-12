@@ -218,7 +218,9 @@ def test_setup_transaction_preserves_previous_registration_until_all_checks_pass
             verdict = performance.read_candidate_verdict(candidate_dir)
             assert verdict is not None and verdict["verdict"] == "blocked"
             assert verdict["candidate_token"] == token
-            assert performance.read_verdict(config_path) is None
+            # No stray verdict next to the active config (the old layout's
+            # shared file is what could disable the previous registration).
+            assert not (config_path.parent / "performance.json").exists()
             assert setup.read_pending_candidate(config_path)["token"] == token
     else:
         updated = load_config(config_path)

@@ -4,13 +4,11 @@ The voice registration and the machine performance check are separate
 concerns: a saved voice is never discarded because performance failed, and a
 candidate may only run live filtering after an explicit verdict.
 
-Verdict storage is split so a pending candidate can never override the active
-registration's authorization:
-
-- the active verdict lives next to ``config.json`` and is written only when a
-  candidate commits (pass, or an explicitly approved trial);
-- a candidate's own verdict lives inside its registration folder and is what
-  retest/approve operate on.
+A verdict is an immutable part of its candidate's registration folder; the
+active registration is whichever folder ``config.json`` points at. Committing
+is therefore a single atomic config rename: the old pair stays whole until
+the rename and the new pair is whole after it — a failure or crash can never
+leave a config paired with a foreign verdict.
 
 Verdicts are bound to the full identity of the voice (input device, model and
 enrollment hashes, app version/build, runtime frame parameters), so a result
@@ -167,20 +165,21 @@ def choose_best(candidates: list[dict]) -> dict | None:
     return None
 
 
-def verdict_path(config_path: Path) -> Path:
-    return config_path.parent / VERDICT_FILE
-
-
-def read_verdict(config_path: Path) -> dict | None:
-    return _read_verdict_file(verdict_path(config_path))
-
-
 def candidate_verdict_path(folder: Path) -> Path:
     return folder / VERDICT_FILE
 
 
 def read_candidate_verdict(folder: Path) -> dict | None:
     return _read_verdict_file(candidate_verdict_path(folder))
+
+
+def active_verdict_folder(config) -> Path:
+    """The registration folder whose verdict authorizes this active config."""
+    return config.enrollment.parent
+
+
+def read_active_verdict(config) -> dict | None:
+    return read_candidate_verdict(active_verdict_folder(config))
 
 
 def _read_verdict_file(path: Path) -> dict | None:
@@ -198,12 +197,6 @@ def _verdict_payload(verdict: dict) -> dict:
             **verdict}
 
 
-def write_verdict(config_path: Path, verdict: dict) -> None:
-    verdict_path(config_path).write_text(
-        json.dumps(_verdict_payload(verdict), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8")
-
-
 def write_candidate_verdict(folder: Path, verdict: dict) -> None:
     candidate_verdict_path(folder).write_text(
         json.dumps(_verdict_payload(verdict), ensure_ascii=False, indent=2) + "\n",
@@ -211,26 +204,19 @@ def write_candidate_verdict(folder: Path, verdict: dict) -> None:
 
 
 def commit_candidate(config, config_path: Path, verdict: dict) -> None:
-    """Transactionally switch the active registration to this candidate.
+    """Switch the active registration to this candidate.
 
-    Both files are staged, then the verdict is published first and the config
-    rename is the commit point: a crash either keeps the old registration
-    untouched or lands the new pair together. A mismatched pair that a crash
-    could still leave behind is rejected by admission (fail closed), and the
-    pending candidate remains retestable without re-recording.
+    The verdict is an immutable part of the candidate's own folder, and the
+    single atomic config rename is the commit point: before it, the active
+    pair is entirely the old one (old config still points at the old folder
+    whose verdict is untouched); after it, entirely the new one. A crash at
+    any step can only leave the old pair intact plus a fully-written new
+    candidate that stays retestable — there is no shared second file whose
+    failure could mismatch the pair.
     """
     from .product import save_config
-    verdict_file = verdict_path(config_path)
-    verdict_tmp = verdict_file.with_suffix(".json.tmp")
-    verdict_tmp.write_text(
-        json.dumps(_verdict_payload(verdict), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8")
-    config_tmp = config_path.with_suffix(".json.tmp")
-    config_tmp.write_text(
-        json.dumps(config.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8")
-    verdict_tmp.replace(verdict_file)
-    config_tmp.replace(config_path)
+    write_candidate_verdict(config.enrollment.parent, verdict)
+    save_config(config, config_path)
 
 
 def validate_verdict(payload: dict) -> str | None:
@@ -276,14 +262,15 @@ def admission(config, bundle_root: Path | None, config_path: Path) -> tuple[str,
     """Decide whether the active config may start live filtering.
 
     Returns (decision, reason): ``allow``, ``warn_trial`` (stable but slower
-    and not yet explicitly approved), or ``deny``. Only the active verdict
-    (published by a commit) is consulted — a pending candidate's verdict never
-    affects the active registration. Developer configs keep their manual
-    benchmark/latency flow and are not gated here.
+    and not yet explicitly approved), or ``deny``. Only the verdict inside the
+    active registration's own folder is consulted — a pending candidate's
+    verdict lives in a different folder and never affects the active one.
+    Developer configs keep their manual benchmark/latency flow and are not
+    gated here.
     """
     if not config.bundle_managed:
         return "allow", None
-    verdict = read_verdict(config_path)
+    verdict = read_active_verdict(config)
     if verdict is None:
         return "deny", "unchecked"
     invalid = validate_verdict(verdict)

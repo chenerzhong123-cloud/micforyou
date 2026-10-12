@@ -212,6 +212,12 @@ struct MenuContentView: View {
         case "PAUSED":
             return ("原音直通中，包含身旁人声；结束才释放麦克风", "pause.circle", .orange)
         default:
+            // A configured registration the backend would refuse must be
+            // surfaced here — the menu can never claim "ready to start" and
+            // then reject the start tap.
+            if let notice = AdmissionNotice.message(for: model.status) {
+                return (notice, "hourglass", .orange)
+            }
             if let error = model.status?.deviceErrors.first {
                 return (error, "mic.slash", .orange)
             }
@@ -228,7 +234,10 @@ struct MenuContentView: View {
         case "DEGRADED": "原音透传"
         case "PAUSED": "过滤已暂停"
         case "FAULT": "已安全静音"
-        case "STOPPED": model.status?.ready == true ? "可以开始" : "需要完成设置"
+        case "STOPPED":
+            if model.status?.ready == true { "可以开始" }
+            else if AdmissionNotice.message(for: model.status) != nil { "待重新检查性能" }
+            else { "需要完成设置" }
         default: "正在读取状态"
         }
     }

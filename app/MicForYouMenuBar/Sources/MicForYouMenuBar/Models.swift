@@ -72,6 +72,11 @@ struct PerformanceStatus: Codable, Equatable {
     }
 }
 
+struct AdmissionStatus: Codable, Equatable {
+    let decision: String   // allow | warn_trial | deny
+    let reason: String?
+}
+
 struct ProductStatus: Codable, Equatable {
     let ready: Bool
     let inputDevice: String
@@ -81,14 +86,25 @@ struct ProductStatus: Codable, Equatable {
     let runtime: RuntimeStatus
     let qualityNotice: String
     let performance: PerformanceStatus?
+    let admission: AdmissionStatus?
+    let retestAvailable: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case ready, runtime, performance
+        case ready, runtime, performance, admission
         case inputDevice = "input_device"
         case outputDevice = "output_device"
         case faultPolicy = "fault_policy"
         case deviceErrors = "device_errors"
         case qualityNotice = "quality_notice"
+        case retestAvailable = "retest_available"
+    }
+
+    /// The settings-page "re-check performance" action is available whenever
+    /// the backend can retest without re-recording — a saved pending voice or
+    /// an adoptable active registration. It never depends on the last job's
+    /// status fields, which older builds did not write.
+    var retestEntryAvailable: Bool {
+        retestAvailable == true
     }
 }
 
@@ -242,6 +258,22 @@ enum StatusAppearance: Equatable {
         case "STARTING", "RECOVERING", "PAUSED", "STOPPING": .warning
         case "DEGRADED", "FAULT": .danger
         default: .neutral
+        }
+    }
+}
+
+/// Menu messaging for a configured registration whose admission is not
+/// "allow": the user should re-check performance (never re-record).
+enum AdmissionNotice {
+    static func message(for status: ProductStatus?) -> String? {
+        guard let status, status.inputDevice.isEmpty == false || status.ready == false,
+              let admission = status.admission, admission.decision != "allow",
+              status.retestEntryAvailable else { return nil }
+        switch admission.decision {
+        case "warn_trial":
+            return "当前声音候选延迟偏高且尚未确认试用；请在设置中选择“仍然试用”或重新检查"
+        default:
+            return "本机性能需要重新检查（无需重新朗读）；请在设置中点“重新检查性能…”"
         }
     }
 }

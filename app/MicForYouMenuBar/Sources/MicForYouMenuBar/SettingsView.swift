@@ -141,17 +141,24 @@ struct SettingsView: View {
                     } else if job.status != "IDLE" {
                         Text(job.stage).font(.caption)
                             .foregroundStyle(job.status == "FAILED" ? .red : .secondary)
-                        if job.voice == "saved" && !model.enrollmentSheet {
-                            // WAITING offers the trial choice; FAILED/CANCELLED
-                            // with a saved voice offer the no-reread retest.
-                            Button(job.status == "WAITING"
-                                   ? "查看延迟提示与试用…" : "重新检查性能…") {
+                        if job.status == "WAITING" && !model.enrollmentSheet {
+                            Button("查看延迟提示与试用…") {
                                 model.enrollmentAttemptToken = job.token
                                 model.enrollmentSheet = true
                             }
                         }
                     }
                 }
+            }
+
+            // The re-check action is independent of the last job's state: it
+            // retests the saved voice (pending or adopted active) without
+            // re-recording, which is exactly what an admission change after
+            // an upgrade needs.
+            if !model.setupRunning && !model.enrollmentSheet
+                && model.status?.retestEntryAvailable == true {
+                Button("重新检查性能…") { Task { await model.startRetest() } }
+                    .disabled(model.isWorking || isActive)
             }
 
             HStack {
@@ -205,7 +212,9 @@ struct SettingsView: View {
             // The window renders immediately; data loads in parallel and the
             // device list shows its own local placeholder while reading.
             async let devices: Void = model.refreshDevices()
-            while !Task.isCancelled {
+            // The window is kept alive for instant reopening; stop polling
+            // while it is hidden so no refresh loops outlive its visibility.
+            while !Task.isCancelled && model.settingsVisible {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(2))
             }

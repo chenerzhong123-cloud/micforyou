@@ -8,7 +8,7 @@ enum DevicesPhase: Equatable {
 }
 
 @MainActor
-final class AppModel: ObservableObject {
+final class AppModel: NSObject, ObservableObject {
     @Published var status: ProductStatus?
     @Published var devices: [AudioDevice] = []
     @Published var devicesPhase: DevicesPhase = .unknown
@@ -35,7 +35,8 @@ final class AppModel: ObservableObject {
 
     private var client: CLIClient?
 
-    init() {
+    override init() {
+        super.init()
         do {
             client = try CLIClient.discover()
         } catch {
@@ -75,9 +76,14 @@ final class AppModel: ObservableObject {
     /// app and whose first-frame behavior we could not measure).
     private var settingsWindow: NSWindow?
     private var settingsWindowObservers: [NSObjectProtocol] = []
+    /// Gates the settings window's polling task: the window is kept alive for
+    /// instant reopening, so hiding it must also stop its 2-second refresh
+    /// loop instead of silently querying in the background forever.
+    @Published var settingsVisible = false
 
     func openSettings() {
         UITiming.event("settings.openRequested", ["source": "user"])
+        settingsVisible = true
         if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -90,6 +96,7 @@ final class AppModel: ObservableObject {
         window.title = "MicForYou 设置"
         window.isReleasedWhenClosed = false
         window.center()
+        window.delegate = self
         window.contentView = NSHostingView(rootView: SettingsView(model: self))
         settingsWindow = window
         // Window-server callbacks double as interaction-ready timing marks:
@@ -113,6 +120,7 @@ final class AppModel: ObservableObject {
     }
 
     func closeSettings() {
+        settingsVisible = false
         settingsWindow?.orderOut(nil)
     }
 
@@ -443,5 +451,12 @@ final class AppModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+extension AppModel: NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        closeSettings()
+        return true
     }
 }
