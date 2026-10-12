@@ -213,9 +213,9 @@ def test_setup_transaction_preserves_previous_registration_until_all_checks_pass
             assert (candidate_dir / "enrollment.wav").exists()
             assert job.get("voice") == "saved"
             from micforyou import performance
-            # The blocked verdict belongs to the pending candidate only; the
-            # active registration's authorization is never overridden.
-            verdict = performance.read_candidate_verdict(candidate_dir)
+            # The blocked verdict belongs to the pending candidate's own
+            # attempt; the active registration's authorization is untouched.
+            verdict = performance.read_attempt_verdict(candidate_dir, token)
             assert verdict is not None and verdict["verdict"] == "blocked"
             assert verdict["candidate_token"] == token
             # No stray verdict next to the active config (the old layout's

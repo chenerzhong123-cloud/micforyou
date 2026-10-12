@@ -70,10 +70,19 @@ def pass_verdict(cfg: ProductConfig, bundle_root: Path | None,
         "frames_per_chunk": cfg.frames_per_chunk, "prefill_ms": cfg.prefill_ms,
         "identity": performance.identity(cfg.input_device, cfg.onnx_model,
                                          cfg.enrollment, bundle_root),
-        "candidate_token": "c0ffee", "attempt_id": "a0ffee",
+        "candidate_token": cfg.enrollment.parent.name, "attempt_id": "a0ffee",
         "latency_ms_p95": 260.0}
     payload.update(changes)
     return payload
+
+
+def commit_active(cfg: ProductConfig, path: Path, bundle_root: Path | None,
+                  **verdict_changes) -> dict:
+    """Commit a registration the way the product does: verdict into its own
+    attempt directory, config carrying the attempt reference."""
+    verdict = pass_verdict(cfg, bundle_root, **verdict_changes)
+    performance.commit_candidate(cfg, path, verdict)
+    return verdict
 
 
 def test_classify_latency_pass_warning_and_blocks():
@@ -161,33 +170,41 @@ def test_validate_verdict_rejects_hostile_shapes(tmp_path: Path):
 
 
 def test_admission_requires_verdict_for_bundled_configs(tmp_path: Path):
+    from dataclasses import replace
     cfg = registered_config(tmp_path)
     path = tmp_path / "config.json"
     save_config(cfg, path)
     assert admission(cfg, None, path) == ("deny", "unchecked")
 
-    # A verdict written by an older build (no frames/prefill binding, no
-    # enrollment/build identity) must not silently authorize the new build.
-    performance.write_candidate_verdict(cfg.enrollment.parent,
-                                        {"verdict": "pass", "identity": {
-                                            "input_device": "Mic", "onnx_sha256": None,
-                                            "app_version": "dev"}})
+    # A build-8-era verdict at the folder root (readable legacy location, no
+    # frames/prefill binding, incomplete identity) must not authorize.
+    (cfg.enrollment.parent / "performance.json").write_text(json.dumps({
+        "schema": performance.VERDICT_SCHEMA, "verdict": "pass",
+        "identity": {"input_device": "Mic", "onnx_sha256": None,
+                     "app_version": "dev"}}))
     assert admission(cfg, None, path) == ("deny", "invalid_verdict")
+    (cfg.enrollment.parent / "performance.json").unlink()
 
-    performance.write_candidate_verdict(cfg.enrollment.parent, pass_verdict(cfg, None))
+    commit_active(cfg, path, None)
+    cfg = load_config(path)
     assert admission(cfg, None, path) == ("allow", None)
 
+    # A newer retest of the same folder wrote its own attempt directory; the
+    # active reference still points at the authorizing attempt.
     performance.write_candidate_verdict(
         cfg.enrollment.parent,
-        pass_verdict(cfg, None, verdict="latency_warning", approved_trial=False))
-    assert admission(cfg, None, path) == ("warn_trial", "high_latency")
+        pass_verdict(cfg, None, attempt_id="b11aaa", verdict="blocked",
+                     reason="fault", latency_ms_p95=None))
+    assert admission(cfg, None, path) == ("allow", None)
 
-    performance.write_candidate_verdict(
-        cfg.enrollment.parent,
-        pass_verdict(cfg, None, verdict="latency_warning", approved_trial=True))
-    assert admission(cfg, None, path)[0] == "allow"
+    commit_active(cfg, path, None, attempt_id="c22bbb",
+                  verdict="latency_warning", approved_trial=False)
+    assert admission(load_config(path), None, path) == ("warn_trial", "high_latency")
 
-    changed = registered_config(tmp_path, name="c0ffee", input_device="Other Mic")
+    performance.write_attempt_approval(cfg.enrollment.parent, "c22bbb")
+    assert admission(load_config(path), None, path)[0] == "allow"
+
+    changed = replace(load_config(path), input_device="Other Mic")
     assert admission(changed, None, path) == ("deny", "device_changed")
 
     dev = registered_config(tmp_path, name="c0ffee", bundle_managed=False)
@@ -199,8 +216,8 @@ def test_admission_binds_model_enrollment_params_and_build(tmp_path: Path):
         json.dumps({"version": "0.2.3", "build": "8"}))
     cfg = registered_config(tmp_path)
     path = tmp_path / "config.json"
-    save_config(cfg, path)
-    performance.write_candidate_verdict(cfg.enrollment.parent, pass_verdict(cfg, tmp_path))
+    commit_active(cfg, path, tmp_path)
+    cfg = load_config(path)
     assert admission(cfg, tmp_path, path)[0] == "allow"
 
     (cfg.onnx_model).write_bytes(b"model-b")
@@ -211,7 +228,8 @@ def test_admission_binds_model_enrollment_params_and_build(tmp_path: Path):
     assert admission(cfg, tmp_path, path) == ("deny", "enrollment_changed")
     (cfg.enrollment).write_bytes(b"wav-c0ffee")
 
-    reparameterized = registered_config(tmp_path, frames_per_chunk=24)
+    from dataclasses import replace as _replace
+    reparameterized = _replace(cfg, frames_per_chunk=24)
     assert admission(reparameterized, tmp_path, path) == ("deny", "params_changed")
 
     # Same version, different build: the old verdict no longer applies.
@@ -233,9 +251,10 @@ def test_pending_failure_never_overrides_active_authorization(tmp_path: Path):
     active = registered_config(tmp_path, name="activeold")
     path = tmp_path / "config.json"
     save_config(active, path)
-    performance.write_candidate_verdict(active.enrollment.parent,
-                                        pass_verdict(active, tmp_path))
-    original_verdict = (active.enrollment.parent / "performance.json").read_text()
+    commit_active(active, path, tmp_path, attempt_id="activeattempt01")
+    active = load_config(path)
+    ref = active.verdict_ref
+    original_verdict = (active.enrollment.parent / "attempts" / ref / "verdict.json").read_text()
 
     # A later registration fails its performance check: its verdict lives in
     # its own candidate folder; the active folder is never touched.
@@ -250,13 +269,14 @@ def test_pending_failure_never_overrides_active_authorization(tmp_path: Path):
         "latency_ms_p95": None})
     performance.write_candidate_verdict(
         pending.enrollment.parent,
-        pass_verdict(pending, tmp_path, verdict="latency_warning", approved_trial=False))
+        pass_verdict(pending, tmp_path, attempt_id="attempt002",
+                     verdict="latency_warning", approved_trial=False))
 
     # FAULT / insufficient speed / unapproved warning / cancel on the pending
     # side: the active registration stays allowed and its verdict untouched.
     for _ in range(4):
         assert admission(active, tmp_path, path) == ("allow", None)
-    assert (active.enrollment.parent / "performance.json").read_text() == original_verdict
+    assert (active.enrollment.parent / "attempts" / ref / "verdict.json").read_text() == original_verdict
 
 
 def test_commit_failure_leaves_old_pair_intact_and_candidate_retestable(
@@ -272,13 +292,15 @@ def test_commit_failure_leaves_old_pair_intact_and_candidate_retestable(
     old = registered_config(tmp_path, name="oldpair")
     new = registered_config(tmp_path, name="newpair")
     path = tmp_path / "config.json"
-    save_config(old, path)
-    performance.write_candidate_verdict(old.enrollment.parent, pass_verdict(old, tmp_path))
+    commit_active(old, path, tmp_path, attempt_id="oldattempt01")
+    old = load_config(path)
     assert admission(old, tmp_path, path) == ("allow", None)
     old_config_bytes = path.read_bytes()
-    old_verdict_bytes = (old.enrollment.parent / "performance.json").read_bytes()
+    old_ref = old.verdict_ref
+    old_verdict_bytes = (old.enrollment.parent / "attempts" / old_ref
+                         / "verdict.json").read_bytes()
 
-    verdict = pass_verdict(new, tmp_path)
+    verdict = pass_verdict(new, tmp_path, attempt_id="newattempt01")
 
     # Failure at the final config rename: old pair intact, new candidate
     # fully written (its verdict is part of its folder), still committable.
@@ -293,32 +315,38 @@ def test_commit_failure_leaves_old_pair_intact_and_candidate_retestable(
     with pytest.raises(OSError):
         performance.commit_candidate(new, path, verdict)
     assert path.read_bytes() == old_config_bytes
-    assert (old.enrollment.parent / "performance.json").read_bytes() == old_verdict_bytes
+    assert (old.enrollment.parent / "attempts" / old_ref
+            / "verdict.json").read_bytes() == old_verdict_bytes
     assert admission(old, tmp_path, path) == ("allow", None)
-    stored = performance.read_candidate_verdict(new.enrollment.parent)
+    stored = performance.read_attempt_verdict(new.enrollment.parent, "newattempt01")
     assert stored["verdict"] == "pass"
 
     # After the transient failure clears, the same commit succeeds and the
     # new pair is complete and allowed.
     monkeypatch.setattr(Path, "replace", real_replace)
     performance.commit_candidate(new, path, verdict)
-    assert admission(new, tmp_path, path) == ("allow", None)
-    assert load_config(path).enrollment == new.enrollment
+    committed = load_config(path)
+    assert committed.enrollment == new.enrollment
+    assert committed.verdict_ref == "newattempt01"
+    assert admission(committed, tmp_path, path) == ("allow", None)
 
     # Failure while writing the new candidate's verdict: nothing changed at
-    # all — old pair intact, new folder has no verdict, commit raised.
-    monkeypatch.setattr(Path, "write_text", lambda self, *a, **k: (
-        (_ for _ in ()).throw(OSError("injected verdict write failure"))
-        if self.name == "performance.json" and self.parent.name == "newpair2"
-        else real_write_text(self, *a, **k)))
+    # all — old pair intact, new attempt has no verdict, commit raised.
+    def fail_verdict_write(self, *a, **k):
+        if (self.name == "verdict.json" and self.parent.name == "newattempt02"):
+            raise OSError("injected verdict write failure")
+        return real_write_text(self, *a, **k)
+
+    monkeypatch.setattr(Path, "write_text", fail_verdict_write)
     old2 = registered_config(tmp_path, name="oldpair2")
     new2 = registered_config(tmp_path, name="newpair2")
-    save_config(old2, path)
-    performance.write_candidate_verdict(old2.enrollment.parent, pass_verdict(old2, tmp_path))
+    commit_active(old2, path, tmp_path, attempt_id="oldattempt02")
+    old2 = load_config(path)
     with pytest.raises(OSError):
-        performance.commit_candidate(new2, path, pass_verdict(new2, tmp_path))
+        performance.commit_candidate(
+            new2, path, pass_verdict(new2, tmp_path, attempt_id="newattempt02"))
     assert load_config(path).enrollment == old2.enrollment
-    assert performance.read_candidate_verdict(new2.enrollment.parent) is None
+    assert performance.read_attempt_verdict(new2.enrollment.parent, "newattempt02") is None
     assert admission(old2, tmp_path, path) == ("allow", None)
 
 
@@ -394,12 +422,12 @@ def test_worker_performance_stage_reuses_voice_without_recording(
     setup.run_worker(config_path, "Mic", "retest-token", stage="performance")
     job = setup.read_job(config_path)
     assert job["status"] == "READY" and job["performance"] == "pass"
-    # The committed verdict lives inside the candidate folder the config now
-    # points at — one folder, one pair.
-    assert performance.read_candidate_verdict(folder)["verdict"] == "pass"
-    from micforyou.product import load_config
-    assert load_config(config_path).enrollment.parent == folder
-    assert admission(load_config(config_path), bundle, config_path) == ("allow", None)
+    # The committed verdict is the attempt the config's reference names.
+    committed = load_config(config_path)
+    assert committed.enrollment.parent == folder
+    assert committed.verdict_ref == "retest-token"
+    assert performance.read_attempt_verdict(folder, "retest-token")["verdict"] == "pass"
+    assert admission(committed, bundle, config_path) == ("allow", None)
     attempt_dir = folder / "attempts" / "retest-token"
     assert (attempt_dir / "benchmark.json").is_file()
     assert (attempt_dir / "latency-8-100.json").is_file()
@@ -439,7 +467,7 @@ def test_worker_records_terminal_attempts_for_failures(tmp_path: Path, monkeypat
     attempt = json.loads(records[-1].read_text())
     assert attempt["attempt_id"] == "failingtok"
     assert attempt["outcome"] == "blocked"
-    assert performance.read_candidate_verdict(folder)["verdict"] == "blocked"
+    assert performance.read_attempt_verdict(folder, "failingtok")["verdict"] == "blocked"
 
 
 def test_start_retest_requires_saved_candidate_and_marker(tmp_path: Path, monkeypatch):
@@ -534,6 +562,9 @@ def _approvable_candidate(tmp_path: Path, monkeypatch, bundle) -> tuple:
         "approved_trial": False, "frames_per_chunk": 16, "prefill_ms": 150.0,
         "identity": ident, "candidate_token": token, "attempt_id": "attempt001",
         "latency_ms_p95": 521.0})
+    import os as _os, time as _time
+    future = _time.time() + 60
+    _os.utime(folder / "attempts" / "attempt001" / "verdict.json", (future, future))
     setup.save_job(config_path, dict(
         status="WAITING", stage="等待确认", progress=1.0, token="windowtok",
         voice="saved", performance="latency_warning"))
@@ -553,13 +584,14 @@ def test_approve_trial_enables_warning_candidate(tmp_path: Path, monkeypatch):
     result = setup.approve_trial(config_path)
     assert result["status"] == "READY" and result["approved_trial"] is True
     assert result["token"] == "windowtok"  # the waiting window completes
-    published = performance.read_candidate_verdict(folder)
-    assert published["verdict"] == "latency_warning"
-    assert published["approved_trial"] is True
     saved = load_config(config_path)
     assert saved.frames_per_chunk == 16 and saved.prefill_ms == 150.0
     assert saved.bundle_managed is True
     assert saved.enrollment.parent == folder
+    assert saved.verdict_ref == "attempt001"
+    published = performance.read_attempt_verdict(folder, saved.verdict_ref)
+    assert published["verdict"] == "latency_warning"
+    assert published["approved_trial"] is True  # via the approval overlay
     job = setup.read_job(config_path)
     assert job["status"] == "READY" and job["token"] == "windowtok"
     assert job["performance"] == "latency_warning"
@@ -633,9 +665,12 @@ def test_approve_trial_rejects_races_and_stale_candidates(tmp_path: Path, monkey
     monkeypatch.setattr(cli, "require_inactive", lambda *a: None)
 
     # A verdict replaced by a newer attempt cannot be approved.
-    replaced = performance.read_candidate_verdict(folder)
+    replaced = performance.read_attempt_verdict(folder, "attempt001")
     replaced["candidate_token"] = "newervoice"
     performance.write_candidate_verdict(folder, replaced)
+    import os as _os, time as _time
+    future = _time.time() + 120
+    _os.utime(folder / "attempts" / "attempt001" / "verdict.json", (future, future))
     with pytest.raises(ValueError, match="替换"):
         setup.approve_trial(config_path)
 
@@ -681,8 +716,7 @@ def test_status_ready_and_retest_mirror_admission(tmp_path: Path, monkeypatch, c
     assert value["retest_available"] is True
 
     # A passing verdict for the current build: ready and allowed.
-    performance.write_candidate_verdict(active.enrollment.parent,
-                                        pass_verdict(active, bundle))
+    commit_active(active, config_path, bundle, attempt_id="statusattempt01")
     value = run_status()
     assert value["ready"] is True and value["admission"]["decision"] == "allow"
 
@@ -696,9 +730,11 @@ def test_status_ready_and_retest_mirror_admission(tmp_path: Path, monkeypatch, c
     assert value["retest_available"] is True
 
     # An unapproved warning blocks ready but stays retestable.
-    performance.write_candidate_verdict(
-        active.enrollment.parent,
-        pass_verdict(active, bundle, verdict="latency_warning", approved_trial=False))
+    active = registered_config(tmp_path / "userdata", name="activereg",
+                               frames_per_chunk=16)
+    active.enrollment.parent.mkdir(parents=True, exist_ok=True)
+    commit_active(active, config_path, bundle, attempt_id="statusattempt02",
+                  verdict="latency_warning", approved_trial=False)
     value = run_status()
     assert value["ready"] is False
     assert value["admission"]["decision"] == "warn_trial"

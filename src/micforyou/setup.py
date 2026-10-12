@@ -264,7 +264,10 @@ def approve_trial(config_path: Path) -> dict:
         if pending is None:
             raise ValueError("找不到等待确认的声音候选")
         folder = config_path.parent / "registrations" / pending["token"]
-        verdict = performance.read_candidate_verdict(folder)
+        # The newest attempt in the candidate folder is the approvable one;
+        # older attempts stay untouched (a newer retest never overwrites the
+        # conclusion it wants approved).
+        verdict, attempt_ref = performance.latest_attempt_verdict(folder)
         if verdict is None or verdict.get("verdict") != "latency_warning":
             raise ValueError("当前没有等待确认的延迟警告候选")
         if verdict.get("candidate_token") not in (None, pending["token"]):
@@ -282,7 +285,6 @@ def approve_trial(config_path: Path) -> dict:
                 or recorded.get("app_build") != current["app_build"]):
             raise ValueError("候选信息与结论不一致，请重新检查性能")
         verdict["approved_trial"] = True
-        verdict["candidate_token"] = pending["token"]
         config = ProductConfig(
             input_device=pending["input_device"], model_repo=root / "vendor",
             model_dir=root / "models" / "tfmap_context_causal_100",
@@ -290,7 +292,7 @@ def approve_trial(config_path: Path) -> dict:
             runtime_python=Path(sys.executable), project_root=root, bundle_managed=True,
             frames_per_chunk=int(verdict["frames_per_chunk"]),
             prefill_ms=float(verdict["prefill_ms"]))
-        performance.write_candidate_verdict(folder, verdict)
+        performance.write_attempt_approval(folder, attempt_ref)
         performance.commit_candidate(config, config_path, verdict)
         save_job(config_path, {
             "status": "READY", "stage": "已按你的选择启用当前声音；语音输入可能较慢",
@@ -299,6 +301,23 @@ def approve_trial(config_path: Path) -> dict:
             "candidate_token": pending["token"], "approved_trial": True})
     return {"status": "READY", "approved_trial": True, "token": job.get("token"),
             "frames_per_chunk": config.frames_per_chunk}
+
+
+def _prune_attempts_preserving_references(config_path: Path, folder: Path) -> None:
+    """Bounded retention that never deletes the active reference or the
+    pending conclusion awaiting approval, however old they are."""
+    keep: set[str] = set()
+    try:
+        if config_path.exists():
+            referenced = load_config(config_path).verdict_ref
+            if isinstance(referenced, str):
+                keep.add(referenced)
+    except (OSError, ValueError):
+        pass
+    _, latest = performance.latest_attempt_verdict(folder)
+    if latest:
+        keep.add(latest)
+    performance.prune_attempt_folders(folder, keep)
 
 
 def run_worker(config_path: Path, input_device: str, token: str,
@@ -613,7 +632,7 @@ def run_worker(config_path: Path, input_device: str, token: str,
                 finish_terminal("WAITING",
                                 "声音已保存。语音输入可能需要等一会儿才出字，"
                                 "你可以先试用，也可以重新检查")
-            performance.prune_attempt_folders(folder)
+            _prune_attempts_preserving_references(config_path, folder)
     except (InterruptedError, KeyboardInterrupt):
         if job.get("performance") not in {"pass", "latency_warning"}:
             job["performance"] = job.get("performance") or "unchecked"
@@ -643,9 +662,10 @@ def run_worker(config_path: Path, input_device: str, token: str,
             pass
         raise
     finally:
-        # Bounded evidence retention applies to every attempt, kept or not.
+        # Bounded evidence retention applies to every attempt, kept or not,
+        # but never to the active reference or the pending conclusion.
         if folder is not None and folder.exists():
-            performance.prune_attempt_folders(folder)
+            _prune_attempts_preserving_references(config_path, folder)
         # A voice that reached the saved point is never deleted on failure;
         # only candidates that failed before saving (recording/model issues)
         # are cleaned up.

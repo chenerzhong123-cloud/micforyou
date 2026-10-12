@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, replace
 import json
 from pathlib import Path
 import os
+import re
 
 
 CONFIG_SCHEMA = "micforyou/product-config/1"
@@ -36,6 +37,10 @@ class ProductConfig:
     recovery_window_seconds: float = 300.0
     route_reconnect_timeout_seconds: float = 120.0
     bundle_managed: bool = False
+    # Name of the attempts subdirectory (under the enrollment folder) whose
+    # verdict.json authorizes this config. Absent in registrations made by
+    # older builds, which kept the verdict at the folder root.
+    verdict_ref: str | None = None
 
     def validate(self) -> None:
         if self.fault_policy not in {"silence", "passthrough"}:
@@ -56,6 +61,9 @@ class ProductConfig:
             raise ValueError("invalid recovery budget")
         if self.route_reconnect_timeout_seconds <= 0:
             raise ValueError("route_reconnect_timeout_seconds must be positive")
+        if self.verdict_ref is not None and not re.fullmatch(
+                r"[0-9A-Za-z_-]{6,64}", self.verdict_ref):
+            raise ValueError("verdict_ref must be a plain attempt directory name")
 
     def to_dict(self) -> dict:
         payload = asdict(self)

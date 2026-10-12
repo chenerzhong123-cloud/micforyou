@@ -166,11 +166,59 @@ def choose_best(candidates: list[dict]) -> dict | None:
 
 
 def candidate_verdict_path(folder: Path) -> Path:
+    """Legacy location (folder root) kept for reading build-8 registrations."""
     return folder / VERDICT_FILE
 
 
 def read_candidate_verdict(folder: Path) -> dict | None:
     return _read_verdict_file(candidate_verdict_path(folder))
+
+
+def attempt_verdict_path(folder: Path, ref: str) -> Path:
+    return folder / "attempts" / ref / "verdict.json"
+
+
+def read_attempt_verdict(folder: Path, ref: str) -> dict | None:
+    """The immutable verdict one attempt wrote, plus its approval overlay."""
+    verdict = _read_verdict_file(attempt_verdict_path(folder, ref))
+    if verdict is None:
+        return None
+    approval = _read_verdict_file(folder / "attempts" / ref / "verdict-approved.json")
+    if approval is not None:
+        verdict = {**verdict, **{key: approval.get(key, verdict.get(key))
+                                 for key in ("approved_trial",)}}
+    return verdict
+
+
+def latest_attempt_verdict(folder: Path) -> tuple[dict | None, str | None]:
+    """Newest attempt verdict in a folder — what a pending approval operates
+    on. Attempts are separate directories, so a newer retest never overwrites
+    an older conclusion."""
+    directory = folder / "attempts"
+    if not directory.is_dir():
+        return None, None
+    best, best_ref, best_stamp = None, None, None
+    for entry in directory.iterdir():
+        if not entry.is_dir() or not _plain_name(entry.name):
+            continue
+        verdict_file = attempt_verdict_path(folder, entry.name)
+        if not verdict_file.is_file():
+            continue
+        verdict = read_attempt_verdict(folder, entry.name)
+        if verdict is None:
+            continue
+        try:
+            stamp = verdict_file.stat().st_mtime
+        except OSError:
+            continue
+        if best_stamp is None or stamp >= best_stamp:
+            best, best_ref, best_stamp = verdict, entry.name, stamp
+    return best, best_ref
+
+
+def _plain_name(name: str) -> bool:
+    import re as _re
+    return _re.fullmatch(r"[0-9A-Za-z_-]{6,64}", name) is not None
 
 
 def active_verdict_folder(config) -> Path:
@@ -179,7 +227,19 @@ def active_verdict_folder(config) -> Path:
 
 
 def read_active_verdict(config) -> dict | None:
-    return read_candidate_verdict(active_verdict_folder(config))
+    """The verdict this config's atomic reference points at.
+
+    ``verdict_ref`` names the attempts subdirectory written at commit time,
+    so retests of the same folder create new attempt directories and can
+    never overwrite the authorization an active config points at. Refs from
+    older builds are absent; those registrations keep reading the folder-root
+    file, which retests no longer write.
+    """
+    folder = active_verdict_folder(config)
+    ref = getattr(config, "verdict_ref", None)
+    if isinstance(ref, str) and _plain_name(ref):
+        return read_attempt_verdict(folder, ref)
+    return read_candidate_verdict(folder)
 
 
 def _read_verdict_file(path: Path) -> dict | None:
@@ -198,25 +258,44 @@ def _verdict_payload(verdict: dict) -> dict:
 
 
 def write_candidate_verdict(folder: Path, verdict: dict) -> None:
-    candidate_verdict_path(folder).write_text(
+    """Write an attempt's verdict into its own immutable attempt directory."""
+    attempt_id = verdict.get("attempt_id")
+    if not isinstance(attempt_id, str) or not _plain_name(attempt_id):
+        raise ValueError("attempt verdict needs a plain attempt_id")
+    directory = folder / "attempts" / attempt_id
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "verdict.json").write_text(
         json.dumps(_verdict_payload(verdict), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8")
 
 
-def commit_candidate(config, config_path: Path, verdict: dict) -> None:
-    """Switch the active registration to this candidate.
+def write_attempt_approval(folder: Path, attempt_id: str) -> None:
+    """Record the explicit trial approval next to its (immutable) verdict."""
+    if not _plain_name(attempt_id):
+        raise ValueError("attempt id must be a plain directory name")
+    directory = folder / "attempts" / attempt_id
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "verdict-approved.json").write_text(json.dumps(
+        {"schema": VERDICT_SCHEMA,
+         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+         "approved_trial": True}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    The verdict is an immutable part of the candidate's own folder, and the
-    single atomic config rename is the commit point: before it, the active
-    pair is entirely the old one (old config still points at the old folder
-    whose verdict is untouched); after it, entirely the new one. A crash at
-    any step can only leave the old pair intact plus a fully-written new
-    candidate that stays retestable — there is no shared second file whose
-    failure could mismatch the pair.
+
+def commit_candidate(config, config_path: Path, verdict: dict) -> None:
+    """Switch the active registration to this candidate's attempt.
+
+    The verdict is an immutable file inside the attempt's own directory; the
+    single atomic config rename (now carrying ``verdict_ref``) is the commit
+    point. Before it, the active pair is entirely the old one — the old
+    config still points at the old attempt's verdict, which no retest of the
+    same folder overwrites; after it, entirely the new one. A crash at any
+    step leaves the old pair intact plus a fully-written, retestable or
+    approvable new attempt.
     """
+    from dataclasses import replace as _replace
     from .product import save_config
     write_candidate_verdict(config.enrollment.parent, verdict)
-    save_config(config, config_path)
+    save_config(_replace(config, verdict_ref=verdict["attempt_id"]), config_path)
 
 
 def validate_verdict(payload: dict) -> str | None:
@@ -314,11 +393,18 @@ def record_attempt(config_path: Path, attempt: dict) -> None:
         old.unlink(missing_ok=True)
 
 
-def prune_attempt_folders(folder: Path) -> None:
-    """Keep only the newest few per-candidate attempt report directories."""
+def prune_attempt_folders(folder: Path, keep: set[str] | None = None) -> None:
+    """Keep only the newest few per-candidate attempt report directories.
+
+    Directories named in ``keep`` (the active config's reference and the
+    pending conclusion awaiting approval) are never removed, however old.
+    """
     directory = folder / "attempts"
     if not directory.is_dir():
         return
+    preserve = keep or set()
     records = sorted(entry for entry in directory.iterdir() if entry.is_dir())
     for old in records[:-MAX_ATTEMPT_RECORDS]:
+        if old.name in preserve:
+            continue
         shutil.rmtree(old, ignore_errors=True)
