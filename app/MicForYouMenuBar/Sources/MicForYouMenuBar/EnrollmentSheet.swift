@@ -122,11 +122,41 @@ struct EnrollmentSheet: View {
                 .frame(maxWidth: .infinity)
                 Button("后台继续") { dismiss() }
 
+            case .waitingTrial:
+                Label("声音已保存", systemImage: "checkmark.circle.fill")
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(.green)
+                Text("语音输入可能需要等一会儿才出字（本机当前负载下延迟偏高）。你可以先试用，也可以重新检查。")
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("重新检查性能") { Task { await model.startRetest() } }
+                        .disabled(model.isWorking)
+                    Button("仍然试用") { Task { await model.approveTrial() } }
+                        .keyboardShortcut(.defaultAction)
+                    Button("查看设置步骤…") { model.openDoubaoGuide() }
+                }
+
+            case .performanceBlocked:
+                Label("声音已保存，本机性能检查未通过",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(.orange)
+                Text(blockedMessage)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("重新检查性能") { Task { await model.startRetest() } }
+                        .disabled(model.isWorking)
+                    Button("重新录音") { Task { await model.enrollVoice() } }
+                        .disabled(model.isWorking)
+                    Button("完成") { dismiss() }
+                }
+
             case .done:
                 Label("设置完成", systemImage: "checkmark.circle.fill")
                     .font(.title3.weight(.medium))
                     .foregroundStyle(.green)
                 Text("在豆包输入法中选择 BlackHole 2ch，然后开始过滤。")
+                Button("设置豆包语音输入…") { model.openDoubaoGuide() }
                 Button("完成") { dismiss() }
                     .keyboardShortcut(.defaultAction)
             }
@@ -186,6 +216,17 @@ struct EnrollmentSheet: View {
                 .lineSpacing(6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(6)
+        }
+    }
+
+    private var blockedMessage: String {
+        switch job?.performanceReason {
+        case "fault", "length_mismatch", "nonfinite_output", "underrun":
+            return "当前声音处理不稳定（音频链路出现故障或断续）。请关闭高负载应用后重新检查；重新检查不会要求你再朗读。"
+        case "insufficient_speed":
+            return "当前设备或负载的处理速度不足。请接通电源、关闭高负载应用后重新检查；声音已保存，无需重新朗读。"
+        default:
+            return "性能检查未完成或结果不可用。请重新检查；声音已保存，无需重新朗读。"
         }
     }
 

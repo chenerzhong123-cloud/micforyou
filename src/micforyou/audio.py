@@ -10,10 +10,30 @@ import sys
 import time
 from typing import Any, Iterable
 
-import numpy as np
-from scipy.signal import correlate, correlation_lags, resample_poly
-import sounddevice as sd
-import soundfile as sf
+class _LazyModule:
+    """Import heavy scientific/audio libraries on first attribute use.
+
+    Lightweight queries (status, setup-status) must not pay the numpy/scipy/
+    sounddevice import cost on every CLI invocation.
+    """
+
+    def __init__(self, name: str):
+        self._name = name
+        self._module = None
+
+    def __getattr__(self, item: str):
+        module = object.__getattribute__(self, "_module")
+        if module is None:
+            import importlib
+            module = importlib.import_module(object.__getattribute__(self, "_name"))
+            object.__setattr__(self, "_module", module)
+        return getattr(module, item)
+
+
+np = _LazyModule("numpy")
+scipy_signal = _LazyModule("scipy.signal")
+sd = _LazyModule("sounddevice")
+sf = _LazyModule("soundfile")
 
 
 BLACKHOLE_NAME = "BlackHole 2ch"
@@ -168,7 +188,7 @@ def resample(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarra
         return np.asarray(audio, dtype=np.float32)
     ratio = Fraction(target_rate, source_rate).limit_denominator()
     return np.asarray(
-        resample_poly(audio, ratio.numerator, ratio.denominator, axis=0),
+        scipy_signal.resample_poly(audio, ratio.numerator, ratio.denominator, axis=0),
         dtype=np.float32,
     )
 
@@ -225,8 +245,8 @@ def probe_loopback(path: Path, device: Device) -> dict[str, Any]:
         blocking=True,
     )
     observed = captured[:, 0]
-    values = correlate(observed, signal, mode="full", method="fft")
-    lags = correlation_lags(len(observed), len(signal), mode="full")
+    values = scipy_signal.correlate(observed, signal, mode="full", method="fft")
+    lags = scipy_signal.correlation_lags(len(observed), len(signal), mode="full")
     best = int(np.argmax(np.abs(values)))
     lag = int(lags[best])
     start_observed = max(lag, 0)

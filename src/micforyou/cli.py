@@ -388,6 +388,8 @@ def command_status(args: argparse.Namespace) -> None:
                     "quality_notice": "升级到完整 App 后，请重新注册声音；旧录音和模型会保留",
                     "configured": True, "needs_bundle_setup": True}, args.output)
         return
+    from .performance import read_verdict
+    verdict = read_verdict(args.config)
     write_json(
         {
             **product_status(config),
@@ -396,6 +398,12 @@ def command_status(args: argparse.Namespace) -> None:
                 "Trial version: partial filtering only; target-absent "
                 "speech may still pass."
             ),
+            "performance": None if verdict is None else {
+                "verdict": verdict.get("verdict"),
+                "reason": verdict.get("reason"),
+                "approved_trial": verdict.get("approved_trial", False),
+                "frames_per_chunk": verdict.get("frames_per_chunk"),
+            },
         },
         args.output,
     )
@@ -407,6 +415,22 @@ def start_background(config: ProductConfig, args: argparse.Namespace) -> dict:
             "background mode requires fault_policy=silence; use foreground "
             "run for passthrough until a persistent degraded warning UI exists"
         )
+    from .performance import admission
+    bundle_root = os.environ.get("MICFORYOU_BUNDLE_ROOT")
+    decision, reason = admission(config, Path(bundle_root) if bundle_root else None,
+                                 args.config)
+    if decision == "deny":
+        messages = {
+            "unchecked": "本机性能尚未检查；请在设置中完成或重新检查性能",
+            "device_changed": "麦克风已更换，请重新检查性能后开始",
+            "model_changed": "声音模型已更换，请重新检查性能后开始",
+            "version_changed": "应用已更新，请重新检查性能后开始",
+        }
+        raise ValueError(messages.get(reason, f"性能检查未通过（{reason}），"
+                                             "请重新检查后再开始"))
+    if decision == "warn_trial":
+        raise ValueError("当前声音候选延迟偏高且尚未确认试用；请在设置中选择"
+                         "“仍然试用”或重新检查性能")
     status = product_status(config)
     if not status["ready"]:
         raise ValueError(f"MicForYou is not ready: {status}")
@@ -765,9 +789,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     from .setup import (
         REGISTRATION_SECONDS,
+        approve_trial,
         cancel_setup,
         run_worker,
         setup_status,
+        start_retest,
         start_setup,
     )
     for name, handler in (("setup-start", start_setup), ("setup-status", setup_status),
@@ -783,7 +809,17 @@ def build_parser() -> argparse.ArgumentParser:
     worker.add_argument("--config", type=Path, default=default_config_path())
     worker.add_argument("--input-device", required=True)
     worker.add_argument("--token", required=True)
-    worker.set_defaults(func=lambda a: run_worker(a.config, a.input_device, a.token))
+    worker.add_argument("--stage", choices=["all", "performance"], default="all")
+    worker.set_defaults(func=lambda a: run_worker(a.config, a.input_device, a.token,
+                                                  a.stage))
+
+    for name, handler in (("setup-retest", None), ("setup-approve", None)):
+        action = subparsers.add_parser(name)
+        action.add_argument("--config", type=Path, default=default_config_path())
+        if name == "setup-retest":
+            action.set_defaults(func=lambda a: write_json(start_retest(a.config), None))
+        else:
+            action.set_defaults(func=lambda a: write_json(approve_trial(a.config), None))
 
     enroll = subparsers.add_parser(
         "enroll", help="record and validate a replacement enrollment"

@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import AVFoundation
+import SwiftUI
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -36,23 +37,74 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @Published var statusLoading = false
+    @Published var devicesLoading = false
+    private var statusInFlight = false
+    private var setupInFlight = false
+    private var devicesInFlight2 = false
+
+    /// Parallel read-only refresh: status and setup status never wait on each
+    /// other, and concurrent callers share one flight instead of stacking
+    /// duplicate CLI processes.
     func refresh() async {
         guard !busy, !uninstallBusy, let client else { return }
-        do {
-            let value = try await client.run(["status"], as: ProductStatus.self)
+        async let statusResult = loadStatusIfFree(client)
+        async let setupResult = client.isBundled ? loadSetupIfFree(client) : nil
+        let (value, job) = await (statusResult, setupResult)
+        if let value {
             status = value
-            if !value.inputDevice.isEmpty && !setupRunning { selectedInput = value.inputDevice }
-            if client.isBundled {
-                setupJob = try await client.run(["setup-status"], as: SetupJob.self)
+            if !value.inputDevice.isEmpty && !setupRunning {
+                selectedInput = value.inputDevice
             }
             errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
+        }
+        if let job { setupJob = job }
+    }
+
+    private func loadStatusIfFree(_ client: CLIClient) async -> ProductStatus? {
+        guard !statusInFlight else { return nil }
+        statusInFlight = true
+        defer { statusInFlight = false }
+        statusLoading = true
+        defer { statusLoading = false }
+        return try? await withReadTimeout {
+            try await client.run(["status"], as: ProductStatus.self)
+        }
+    }
+
+    private func loadSetupIfFree(_ client: CLIClient) async -> SetupJob? {
+        guard !setupInFlight else { return nil }
+        setupInFlight = true
+        defer { setupInFlight = false }
+        return try? await withReadTimeout {
+            try await client.run(["setup-status"], as: SetupJob.self)
+        }
+    }
+
+    /// Read-only queries time out instead of hanging the UI refresh; real
+    /// long-running operations (registration, uninstall) never use this path.
+    private func withReadTimeout<T: Sendable>(
+        _ body: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await body() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(5))
+                throw URLError(.timedOut)
+            }
+            guard let first = try await group.next() else {
+                throw URLError(.timedOut)
+            }
+            group.cancelAll()
+            return first
         }
     }
 
     func refreshDevices() async {
-        guard let client, !uninstallBusy else { return }
+        guard let client, !uninstallBusy, !devicesInFlight2 else { return }
+        devicesInFlight2 = true
+        defer { devicesInFlight2 = false }
+        devicesLoading = true
+        defer { devicesLoading = false }
         do {
             let values = try await client.run(["devices"], as: [AudioDevice].self)
             driverInstalled = values.contains { $0.name == "BlackHole 2ch" }
@@ -120,6 +172,71 @@ final class AppModel: ObservableObject {
         if let job = try? await client.run(["setup-status"], as: SetupJob.self) {
             setupJob = job
         }
+    }
+
+    // MARK: - Performance retest and trial approval
+
+    func startRetest() async {
+        guard let client, !isWorking, !uninstallBusy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            setupJob = try await client.run(["setup-retest"], as: SetupJob.self)
+            enrollmentAttemptToken = setupJob?.token
+            enrollmentSheet = true
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func approveTrial() async {
+        guard let client, !uninstallBusy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            _ = try await client.run(["setup-approve"])
+            if let job = try? await client.run(["setup-status"], as: SetupJob.self) {
+                setupJob = job
+            }
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    // MARK: - Doubao setup guide
+
+    private var guideWindow: NSWindow?
+
+    func openDoubaoGuide() {
+        if let window = guideWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false)
+        window.title = "设置豆包语音输入"
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.contentView = NSHostingView(rootView: DoubaoGuideView(model: self))
+        guideWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func closeDoubaoGuide() {
+        guideWindow?.orderOut(nil)
+    }
+
+    func openSystemSoundSettings() {
+        let urls = [
+            URL(string: "x-apple.systempreferences:com.apple.Sound-Settings"),
+            URL(string: "x-apple.systempreferences:com.apple.sound-settings"),
+        ].compactMap { $0 }
+        for url in urls {
+            if NSWorkspace.shared.open(url) { return }
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
     }
 
     // MARK: - Uninstall

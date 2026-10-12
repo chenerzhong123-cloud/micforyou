@@ -99,7 +99,17 @@ struct SetupJob: Decodable {
     let phase: String?
     let reason: String?
     let token: String?
+    let voice: String?
+    let performance: String?
+    let performanceReason: String?
     let recording: RecordingProgress?
+
+    enum CodingKeys: String, CodingKey {
+        case status, stage, progress, phase, reason, token, voice
+        case performance
+        case performanceReason = "performance_reason"
+        case recording
+    }
 
     struct RecordingProgress: Decodable {
         let durationSeconds: Double
@@ -167,7 +177,13 @@ struct UninstallInventory: Decodable {
 
 enum EnrollmentFlow {
     enum State: Equatable {
-        case idle, countdown, recording, checking, preparing, failed, done
+        case idle, countdown, recording, checking, preparing
+        case failed
+        case done
+        // Voice saved and the machine check reached a verdict that needs the
+        // user: stable-but-slower (explicit trial) or blocked (retest).
+        case waitingTrial
+        case performanceBlocked
     }
 
     static func state(job: SetupJob?, attemptToken: String?) -> State {
@@ -183,7 +199,13 @@ enum EnrollmentFlow {
         case "READY":
             if let token = job.token, token == attemptToken { return .done }
             return .idle
+        case "WAITING":
+            if job.performance == "latency_warning" { return .waitingTrial }
+            return .performanceBlocked
         case "FAILED":
+            if job.voice == "saved" {
+                return .performanceBlocked
+            }
             return .failed
         default:
             return .idle

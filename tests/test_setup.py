@@ -198,12 +198,24 @@ def test_setup_transaction_preserves_previous_registration_until_all_checks_pass
         setup.run_worker(config_path, "Mic", token)
     if failure in {"performance", "cancel", "latency", "quality"}:
         assert config_path.read_bytes() == original
-        assert not (config_path.parent / "registrations" / token).exists()
         job = setup.read_job(config_path)
         assert job["status"] == ("CANCELLED" if failure == "cancel" else "FAILED")
-        if failure == "quality":
-            assert job["reason"] == "too_quiet"
-            assert "没有录到足够清楚的声音" in job["stage"]
+        candidate_dir = config_path.parent / "registrations" / token
+        if failure in {"quality", "cancel"}:
+            # The recording never reached the saved point: candidate removed.
+            assert not candidate_dir.exists()
+            if failure == "quality":
+                assert job["reason"] == "too_quiet"
+                assert "没有录到足够清楚的声音" in job["stage"]
+        else:
+            # The voice was saved; performance failure keeps it for retesting.
+            assert candidate_dir.is_dir()
+            assert (candidate_dir / "enrollment.wav").exists()
+            assert job.get("voice") == "saved"
+            from micforyou import performance
+            verdict = performance.read_verdict(config_path)
+            assert verdict is not None and verdict["verdict"] == "blocked"
+            assert setup.read_pending_candidate(config_path)["token"] == token
     else:
         updated = load_config(config_path)
         assert updated.bundle_managed

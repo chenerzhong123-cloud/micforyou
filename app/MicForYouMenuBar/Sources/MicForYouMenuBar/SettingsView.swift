@@ -21,6 +21,12 @@ struct SettingsView: View {
             GroupBox("音频链路") {
                 VStack(spacing: 12) {
                     settingRow(icon: "mic", title: "实体麦克风") {
+                        if model.devicesLoading && model.devices.isEmpty {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("正在读取设备…").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                         Picker("实体麦克风", selection: $model.selectedInput) {
                             if model.devices.isEmpty {
                                 Text(model.selectedInput.isEmpty ? "未找到设备" : model.selectedInput)
@@ -58,8 +64,14 @@ struct SettingsView: View {
                             Button("刷新") { Task { await model.refreshDevices() } }
                         }
                     } else {
-                        Text("在豆包的输入设备中选择 BlackHole 2ch。")
-                            .font(.caption).foregroundStyle(.secondary)
+                        HStack {
+                            Text("在豆包的输入设备中选择 BlackHole 2ch。")
+                                .font(.caption).foregroundStyle(.secondary)
+                            // Always reachable — also while audio is running,
+                            // because that is exactly when users troubleshoot.
+                            Button("查看设置步骤…") { model.openDoubaoGuide() }
+                                .font(.caption)
+                        }
                     }
                 }
                 .padding(8)
@@ -110,6 +122,13 @@ struct SettingsView: View {
                     } else if job.status != "IDLE" {
                         Text(job.stage).font(.caption)
                             .foregroundStyle(job.status == "FAILED" ? .red : .secondary)
+                        if job.voice == "saved" && !model.enrollmentSheet {
+                            Button(job.status == "WAITING"
+                                   ? "查看延迟提示与试用…" : "重新检查性能…") {
+                                model.enrollmentAttemptToken = job.token
+                                model.enrollmentSheet = true
+                            }
+                        }
                     }
                 }
             }
@@ -161,11 +180,14 @@ struct SettingsView: View {
         }
         .frame(width: 620, height: 610)
         .task {
-            await model.refreshDevices()
+            // The window renders immediately; data loads in parallel and the
+            // device list shows its own local placeholder while reading.
+            async let devices: Void = model.refreshDevices()
             while !Task.isCancelled {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(2))
             }
+            _ = await devices
         }
         .sheet(isPresented: $model.enrollmentSheet) {
             EnrollmentSheet(model: model)

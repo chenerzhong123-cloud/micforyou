@@ -10,7 +10,8 @@ import Foundation
 struct EnrollmentStateCheck {
     static func job(_ status: String, phase: String? = nil, token: String? = nil) -> SetupJob {
         SetupJob(status: status, stage: "stage", progress: 0.5, phase: phase,
-                 reason: nil, token: token, recording: nil)
+                 reason: nil, token: token, voice: nil, performance: nil,
+                 performanceReason: nil, recording: nil)
     }
 
     static func expect(_ actual: EnrollmentFlow.State, _ expected: EnrollmentFlow.State,
@@ -55,6 +56,30 @@ struct EnrollmentStateCheck {
         // Cancelled or idle jobs restart from the preview.
         expect(EnrollmentFlow.state(job: job("CANCELLED", token: "mine"), attemptToken: "mine"),
                .idle, "cancelled -> preview")
+
+        // Voice saved + performance verdicts.
+        func saved(_ status: String, performance: String?, reason: String? = nil) -> SetupJob {
+            SetupJob(status: status, stage: "s", progress: 0.5, phase: nil,
+                     reason: nil, token: "w", voice: "saved",
+                     performance: performance, performanceReason: reason, recording: nil)
+        }
+        expect(EnrollmentFlow.state(job: saved("WAITING", performance: "latency_warning"),
+                                    attemptToken: "w"), .waitingTrial,
+               "saved + latency warning -> trial choice")
+        expect(EnrollmentFlow.state(job: saved("WAITING", performance: "blocked"),
+                                    attemptToken: "w"), .performanceBlocked,
+               "saved + blocked -> retest")
+        expect(EnrollmentFlow.state(job: saved("FAILED", performance: "blocked",
+                                               reason: "underrun"),
+                                    attemptToken: "w"), .performanceBlocked,
+               "failed with saved voice -> retest not re-record")
+        expect(EnrollmentFlow.state(job: job("FAILED", token: "w"),
+                                    attemptToken: nil), .failed,
+               "failed without saved voice -> recording retry")
+        expect(EnrollmentFlow.state(job: saved("CANCELLED", performance: nil),
+                                    attemptToken: "w"), .idle,
+               "cancelled saved voice -> preview")
+
 
         print("MicForYou enrollment state check PASS")
     }
