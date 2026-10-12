@@ -197,10 +197,14 @@ struct EnrollmentSheet: View {
         .interactiveDismissDisabled(state == .countdown || state == .recording)
         .task {
             // Backend-provided timing at a cadence that can render a 3-second
-            // countdown; no local clock guessing.
+            // countdown; no local clock guessing. During the paced performance
+            // measurements the cadence drops to 2 s: each poll spawns a CLI
+            // process whose startup CPU competes with the very measurement it
+            // reports on (observed 140–290% CPU per poll at 400 ms).
             while !Task.isCancelled {
                 await model.refreshSetup()
-                try? await Task.sleep(for: .milliseconds(400))
+                let measuring = model.setupJob?.phase == "checking_performance"
+                try? await Task.sleep(for: .milliseconds(measuring ? 2000 : 400))
             }
         }
         .confirmationDialog(

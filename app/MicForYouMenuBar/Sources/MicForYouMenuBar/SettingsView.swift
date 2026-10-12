@@ -214,9 +214,12 @@ struct SettingsView: View {
             async let devices: Void = model.refreshDevices()
             // The window is kept alive for instant reopening; stop polling
             // while it is hidden so no refresh loops outlive its visibility.
+            // During paced performance measurements the cadence also drops:
+            // poll startup CPU competes with the measurement itself.
             while !Task.isCancelled && model.settingsVisible {
                 await model.refresh()
-                try? await Task.sleep(for: .seconds(2))
+                let measuring = model.setupJob?.phase == "checking_performance"
+                try? await Task.sleep(for: .seconds(measuring ? 5 : 2))
             }
             _ = await devices
         }
