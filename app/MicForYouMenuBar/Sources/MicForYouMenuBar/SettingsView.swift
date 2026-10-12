@@ -21,10 +21,23 @@ struct SettingsView: View {
             GroupBox("音频链路") {
                 VStack(spacing: 12) {
                     settingRow(icon: "mic", title: "实体麦克风") {
-                        if model.devicesLoading && model.devices.isEmpty {
+                        switch model.devicesPhase {
+                        case .loading, .unknown:
+                            if model.devices.isEmpty {
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.small)
+                                    Text("正在读取设备…").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        case .failed:
                             HStack(spacing: 6) {
-                                ProgressView().controlSize(.small)
-                                Text("正在读取设备…").font(.caption).foregroundStyle(.secondary)
+                                Text("设备读取失败").font(.caption).foregroundStyle(.red)
+                                Button("重试") { Task { await model.refreshDevices() } }
+                            }
+                        case .loaded:
+                            if model.devices.isEmpty && model.selectedInput.isEmpty {
+                                Text("未找到输入设备")
+                                    .font(.caption).foregroundStyle(.orange)
                             }
                         }
                         Picker("实体麦克风", selection: $model.selectedInput) {
@@ -64,19 +77,25 @@ struct SettingsView: View {
                             Button("刷新") { Task { await model.refreshDevices() } }
                         }
                     } else {
-                        HStack {
-                            Text("在豆包的输入设备中选择 BlackHole 2ch。")
-                                .font(.caption).foregroundStyle(.secondary)
-                            // Always reachable — also while audio is running,
-                            // because that is exactly when users troubleshoot.
-                            Button("查看设置步骤…") { model.openDoubaoGuide() }
-                                .font(.caption)
-                        }
+                        Text("在豆包的输入设备中选择 BlackHole 2ch。")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 .padding(8)
             }
             .disabled(model.isWorking || isActive)
+
+            // Read-only help stays reachable in every state — including while
+            // audio is running or devices are still loading, which is exactly
+            // when users need the routing steps.
+            HStack {
+                Label("把豆包／系统声音设置切到 BlackHole 的分步说明", systemImage: "questionmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("查看设置步骤…") { model.openDoubaoGuide() }
+                    .font(.caption)
+            }
 
             GroupBox("你的声音") {
                 HStack(spacing: 12) {
@@ -123,6 +142,8 @@ struct SettingsView: View {
                         Text(job.stage).font(.caption)
                             .foregroundStyle(job.status == "FAILED" ? .red : .secondary)
                         if job.voice == "saved" && !model.enrollmentSheet {
+                            // WAITING offers the trial choice; FAILED/CANCELLED
+                            // with a saved voice offer the no-reread retest.
                             Button(job.status == "WAITING"
                                    ? "查看延迟提示与试用…" : "重新检查性能…") {
                                 model.enrollmentAttemptToken = job.token
@@ -180,6 +201,7 @@ struct SettingsView: View {
         }
         .frame(width: 620, height: 610)
         .task {
+            UITiming.event("settings.windowAppear")
             // The window renders immediately; data loads in parallel and the
             // device list shows its own local placeholder while reading.
             async let devices: Void = model.refreshDevices()

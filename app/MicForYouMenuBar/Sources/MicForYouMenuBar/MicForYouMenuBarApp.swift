@@ -13,9 +13,5 @@ struct MicForYouMenuBarApp: App {
                 : "mic")
         }
         .menuBarExtraStyle(.window)
-
-        Settings {
-            SettingsView(model: model)
-        }
     }
 }

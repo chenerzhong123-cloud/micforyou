@@ -2,9 +2,20 @@
 
 The voice registration and the machine performance check are separate
 concerns: a saved voice is never discarded because performance failed, and a
-candidate may only run live filtering after an explicit verdict. Verdicts are
-bound to the identity of the voice (device, model hash, app version) so a
-result from another microphone or an older runtime cannot authorize a start.
+candidate may only run live filtering after an explicit verdict.
+
+Verdict storage is split so a pending candidate can never override the active
+registration's authorization:
+
+- the active verdict lives next to ``config.json`` and is written only when a
+  candidate commits (pass, or an explicitly approved trial);
+- a candidate's own verdict lives inside its registration folder and is what
+  retest/approve operate on.
+
+Verdicts are bound to the full identity of the voice (input device, model and
+enrollment hashes, app version/build, runtime frame parameters), so a result
+from another microphone, an older build, or different runtime parameters can
+never authorize a start. Missing identity information fails closed.
 """
 from __future__ import annotations
 
@@ -12,6 +23,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import shutil
 import time
 import uuid
 
@@ -28,14 +40,40 @@ def sha256_file(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def app_version(bundle_root: Path | None) -> str:
-    if bundle_root is not None:
-        manifest = bundle_root / "bundle-manifest.json"
-        try:
-            return str(json.loads(manifest.read_text())["version"])
-        except (OSError, KeyError, json.JSONDecodeError):
-            return "unknown-bundle"
-    return "dev"
+def app_identity(bundle_root: Path | None) -> dict:
+    """Runtime identity including the build, not just the marketing version.
+
+    Two builds of the same 0.2.2 can differ in behavior; only the build (when
+    recorded in the manifest) distinguishes them for verdict invalidation.
+    """
+    if bundle_root is None:
+        return {"app_version": "dev", "app_build": None}
+    try:
+        manifest = json.loads((bundle_root / "bundle-manifest.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"app_version": "unknown", "app_build": None}
+    version, build = manifest.get("version"), manifest.get("build")
+    return {"app_version": str(version) if version is not None else "unknown",
+            "app_build": str(build) if build is not None else None}
+
+
+def identity(input_device: str, onnx_model: Path, enrollment: Path,
+             bundle_root: Path | None) -> dict:
+    def digest(path: Path) -> str | None:
+        return sha256_file(path) if path.exists() else None
+    return {"input_device": input_device,
+            "onnx_sha256": digest(onnx_model),
+            "enrollment_sha256": digest(enrollment),
+            **app_identity(bundle_root)}
+
+
+def _finite_number(value) -> float | None:
+    """A non-negative finite plain number, or None for anything else."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value) or value < 0:
+        return None
+    return float(value)
 
 
 def classify_latency(payload: dict) -> tuple[str, str | None, dict]:
@@ -45,28 +83,44 @@ def classify_latency(payload: dict) -> tuple[str, str | None, dict]:
     ``latency_warning`` (equally stable but slower), or ``blocked``. Stability
     requirements — completed run, matching lengths, finite output, no real
     underrun — are shared by both passing verdicts and are never relaxed.
+    Malformed or non-numeric fields are rejected as invalid reports instead of
+    raising, so a corrupt report can never become an approvable verdict.
     """
-    inner = payload.get("bridge_internal")
+    inner = payload.get("bridge_internal") if isinstance(payload, dict) else None
     if not isinstance(inner, dict):
         return "blocked", "invalid_report", {}
-    p95 = (inner.get("bridge_latency") or {}).get("latency_ms_p95")
+    errors_value = inner.get("errors")
     metrics = {
-        "status": inner.get("status"),
-        "length_match": inner.get("length_match"),
-        "nonfinite_samples": inner.get("nonfinite_samples"),
-        "underrun_ms": inner.get("underrun_ms"),
-        "latency_ms_p95": p95,
-        "errors": inner.get("errors") or [],
+        "status": inner.get("status") if isinstance(inner.get("status"), str) else None,
+        "length_match": inner.get("length_match") if isinstance(inner.get("length_match"), bool) else None,
+        "nonfinite_samples": inner.get("nonfinite_samples")
+            if isinstance(inner.get("nonfinite_samples"), int)
+            and not isinstance(inner.get("nonfinite_samples"), bool) else None,
+        "underrun_ms": _finite_number(inner.get("underrun_ms")),
+        "latency_ms_p95": None,
+        "errors": [item for item in errors_value if isinstance(item, str)]
+            if isinstance(errors_value, list) else [],
     }
+    if metrics["status"] is None:
+        return "blocked", "invalid_report", metrics
     if metrics["status"] != "COMPLETED":
         return "blocked", "fault", metrics
+    if metrics["length_match"] is None:
+        return "blocked", "invalid_report", metrics
     if metrics["length_match"] is not True:
         return "blocked", "length_mismatch", metrics
+    if metrics["nonfinite_samples"] is None:
+        return "blocked", "invalid_report", metrics
     if metrics["nonfinite_samples"] != 0:
         return "blocked", "nonfinite_output", metrics
-    if not isinstance(metrics["underrun_ms"], (int, float)) or metrics["underrun_ms"] > 0:
+    if metrics["underrun_ms"] is None:
+        return "blocked", "invalid_report", metrics
+    if metrics["underrun_ms"] > 0:
         return "blocked", "underrun", metrics
-    if not isinstance(p95, (int, float)) or not math.isfinite(p95):
+    bridge = inner.get("bridge_latency")
+    p95 = _finite_number(bridge.get("latency_ms_p95")) if isinstance(bridge, dict) else None
+    metrics["latency_ms_p95"] = p95
+    if p95 is None:
         return "blocked", "invalid_report", metrics
     if p95 < LATENCY_P95_LIMIT_MS:
         return "pass", None, metrics
@@ -118,57 +172,145 @@ def verdict_path(config_path: Path) -> Path:
 
 
 def read_verdict(config_path: Path) -> dict | None:
-    path = verdict_path(config_path)
+    return _read_verdict_file(verdict_path(config_path))
+
+
+def candidate_verdict_path(folder: Path) -> Path:
+    return folder / VERDICT_FILE
+
+
+def read_candidate_verdict(folder: Path) -> dict | None:
+    return _read_verdict_file(candidate_verdict_path(folder))
+
+
+def _read_verdict_file(path: Path) -> dict | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if payload.get("schema") != VERDICT_SCHEMA:
+    if not isinstance(payload, dict) or payload.get("schema") != VERDICT_SCHEMA:
         return None
     return payload
 
 
+def _verdict_payload(verdict: dict) -> dict:
+    return {"schema": VERDICT_SCHEMA, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            **verdict}
+
+
 def write_verdict(config_path: Path, verdict: dict) -> None:
-    payload = {"schema": VERDICT_SCHEMA, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-               **verdict}
     verdict_path(config_path).write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        json.dumps(_verdict_payload(verdict), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
 
 
-def identity(input_device: str, onnx_model: Path, version: str) -> dict:
-    return {
-        "input_device": input_device,
-        "onnx_sha256": sha256_file(onnx_model) if onnx_model.exists() else None,
-        "app_version": version,
-    }
+def write_candidate_verdict(folder: Path, verdict: dict) -> None:
+    candidate_verdict_path(folder).write_text(
+        json.dumps(_verdict_payload(verdict), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
+
+
+def commit_candidate(config, config_path: Path, verdict: dict) -> None:
+    """Transactionally switch the active registration to this candidate.
+
+    Both files are staged, then the verdict is published first and the config
+    rename is the commit point: a crash either keeps the old registration
+    untouched or lands the new pair together. A mismatched pair that a crash
+    could still leave behind is rejected by admission (fail closed), and the
+    pending candidate remains retestable without re-recording.
+    """
+    from .product import save_config
+    verdict_file = verdict_path(config_path)
+    verdict_tmp = verdict_file.with_suffix(".json.tmp")
+    verdict_tmp.write_text(
+        json.dumps(_verdict_payload(verdict), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
+    config_tmp = config_path.with_suffix(".json.tmp")
+    config_tmp.write_text(
+        json.dumps(config.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
+    verdict_tmp.replace(verdict_file)
+    config_tmp.replace(config_path)
+
+
+def validate_verdict(payload: dict) -> str | None:
+    """Structural validation; returns None when valid, else a short reason.
+
+    Numeric fields must be finite and non-negative; identity fields must be
+    strings or explicitly None. This keeps corrupt or hand-edited files from
+    becoming authorization, without raising on hostile shapes.
+    """
+    if not isinstance(payload, dict):
+        return "payload"
+    if payload.get("schema") != VERDICT_SCHEMA:
+        return "schema"
+    if payload.get("verdict") not in {"pass", "latency_warning", "blocked"}:
+        return "verdict"
+    if not isinstance(payload.get("approved_trial"), bool):
+        return "approved_trial"
+    frames = payload.get("frames_per_chunk")
+    if not isinstance(frames, int) or isinstance(frames, bool) or frames <= 0:
+        return "frames_per_chunk"
+    if _finite_number(payload.get("prefill_ms")) is None:
+        return "prefill_ms"
+    if payload.get("verdict") in {"pass", "latency_warning"}:
+        if _finite_number(payload.get("latency_ms_p95")) is None:
+            return "latency_ms_p95"
+    ident = payload.get("identity")
+    if not isinstance(ident, dict):
+        return "identity"
+    for key in ("input_device", "onnx_sha256", "enrollment_sha256",
+                "app_version", "app_build"):
+        value = ident.get(key)
+        if value is not None and not isinstance(value, str):
+            return f"identity.{key}"
+    if payload["verdict"] in {"pass", "latency_warning"}:
+        if ident.get("onnx_sha256") is None or ident.get("enrollment_sha256") is None:
+            return "identity.incomplete"
+        if not isinstance(ident.get("input_device"), str) or not ident["input_device"]:
+            return "identity.incomplete"
+    return None
 
 
 def admission(config, bundle_root: Path | None, config_path: Path) -> tuple[str, str | None]:
     """Decide whether the active config may start live filtering.
 
     Returns (decision, reason): ``allow``, ``warn_trial`` (stable but slower
-    and not yet explicitly approved), or ``deny``. Developer configs keep
-    their manual benchmark/latency flow and are not gated here.
+    and not yet explicitly approved), or ``deny``. Only the active verdict
+    (published by a commit) is consulted — a pending candidate's verdict never
+    affects the active registration. Developer configs keep their manual
+    benchmark/latency flow and are not gated here.
     """
     if not config.bundle_managed:
         return "allow", None
     verdict = read_verdict(config_path)
     if verdict is None:
         return "deny", "unchecked"
-    if verdict.get("verdict") == "pass":
-        pass
-    elif verdict.get("verdict") == "latency_warning":
-        if not verdict.get("approved_trial"):
-            return "warn_trial", "high_latency"
-    else:
+    invalid = validate_verdict(verdict)
+    if invalid is not None:
+        return "deny", "invalid_verdict"
+    if verdict["verdict"] == "blocked":
         return "deny", verdict.get("reason") or "blocked"
-    recorded = verdict.get("identity") or {}
-    current = identity(config.input_device, config.onnx_model, app_version(bundle_root))
+    if verdict["verdict"] == "latency_warning" and not verdict["approved_trial"]:
+        return "warn_trial", "high_latency"
+    if (config.frames_per_chunk != verdict["frames_per_chunk"]
+            or config.prefill_ms != verdict["prefill_ms"]):
+        return "deny", "params_changed"
+    recorded = verdict["identity"]
+    current = identity(config.input_device, config.onnx_model, config.enrollment,
+                       bundle_root)
+    if current["onnx_sha256"] is None:
+        return "deny", "model_missing"
+    if current["enrollment_sha256"] is None:
+        return "deny", "model_missing"
     if recorded.get("input_device") != current["input_device"]:
         return "deny", "device_changed"
-    if recorded.get("onnx_sha256") not in (None, current["onnx_sha256"]):
+    if recorded.get("onnx_sha256") != current["onnx_sha256"]:
         return "deny", "model_changed"
-    if recorded.get("app_version") != current["app_version"]:
+    if recorded.get("enrollment_sha256") != current["enrollment_sha256"]:
+        return "deny", "enrollment_changed"
+    if (recorded.get("app_version") != current["app_version"]
+            or recorded.get("app_build") != current["app_build"]):
         return "deny", "version_changed"
     return "allow", None
 
@@ -183,3 +325,13 @@ def record_attempt(config_path: Path, attempt: dict) -> None:
     records = sorted(directory.glob("attempt-*.json"))
     for old in records[:-MAX_ATTEMPT_RECORDS]:
         old.unlink(missing_ok=True)
+
+
+def prune_attempt_folders(folder: Path) -> None:
+    """Keep only the newest few per-candidate attempt report directories."""
+    directory = folder / "attempts"
+    if not directory.is_dir():
+        return
+    records = sorted(entry for entry in directory.iterdir() if entry.is_dir())
+    for old in records[:-MAX_ATTEMPT_RECORDS]:
+        shutil.rmtree(old, ignore_errors=True)

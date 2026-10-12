@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import signal
 import shutil
 import subprocess
@@ -93,7 +94,9 @@ def start_setup(config_path: Path, input_device: str) -> dict:
                    "--token", token]
         config_path.parent.mkdir(parents=True, exist_ok=True)
         log_path = config_path.parent / "setup.log"
-        with log_path.open("w") as log:
+        with log_path.open("a") as log:
+            log.write(f"\n=== registration attempt {token} "
+                      f"{time.strftime('%Y-%m-%dT%H:%M:%S%z')} ===\n")
             process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
                                        stdout=log, stderr=subprocess.STDOUT,
                                        start_new_session=True, cwd=root)
@@ -149,14 +152,49 @@ def pending_candidate_path(config_path: Path) -> Path:
     return config_path.parent / "pending-candidate.json"
 
 
+def _valid_candidate_token(token) -> bool:
+    return (isinstance(token, str) and re.fullmatch(r"[0-9A-Za-z_-]{6,64}", token) is not None)
+
+
 def read_pending_candidate(config_path: Path) -> dict | None:
     try:
         payload = json.loads(pending_candidate_path(config_path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    return payload if payload.get("token") else None
+    if not isinstance(payload, dict) or not _valid_candidate_token(payload.get("token")):
+        return None
+    return payload
 
 
+def adopt_active_registration(config_path: Path) -> dict | None:
+    """Turn an existing full-App registration into a retestable candidate.
+
+    Registrations made by builds without a separate performance verdict can
+    be re-checked without re-reading aloud: their recording and personal model
+    are already active. Adoption never claims the old record passed the new
+    gate — it only makes the retest path available.
+    """
+    try:
+        config = load_config(config_path)
+    except (OSError, ValueError):
+        return None
+    if not config.bundle_managed:
+        return None
+    if not config.enrollment.is_file() or not config.onnx_model.is_file():
+        return None
+    folder = config.enrollment.parent
+    if folder.parent.name != "registrations" or not _valid_candidate_token(folder.name):
+        return None
+    pending = {"token": folder.name, "input_device": config.input_device,
+               "frames_per_chunk": config.frames_per_chunk,
+               "prefill_ms": config.prefill_ms, "adopted_from_active": True,
+               "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    pending_candidate_path(config_path).write_text(
+        json.dumps(pending, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return pending
+
+
+@coordinated_start
 def start_retest(config_path: Path) -> dict:
     """Re-run the performance search for the saved voice. No recording."""
     from .uninstall import uninstall_in_progress
@@ -164,6 +202,10 @@ def start_retest(config_path: Path) -> dict:
         raise ValueError("MicForYou 正在卸载，不能开始性能重测")
     root = bundle_root()
     candidate = read_pending_candidate(config_path)
+    if candidate is None:
+        # A full-App registration from a build without a separate verdict can
+        # still be re-checked: adopt its recording and model as the candidate.
+        candidate = adopt_active_registration(config_path)
     if candidate is None:
         raise ValueError("没有已保存的声音候选；请先完成一次注册")
     folder = config_path.parent / "registrations" / candidate["token"]
@@ -182,7 +224,9 @@ def start_retest(config_path: Path) -> dict:
                    "--token", token, "--stage", "performance"]
         config_path.parent.mkdir(parents=True, exist_ok=True)
         log_path = config_path.parent / "setup.log"
-        with log_path.open("w") as log:
+        with log_path.open("a") as log:
+            log.write(f"\n=== retest attempt {token} "
+                      f"{time.strftime('%Y-%m-%dT%H:%M:%S%z')} ===\n")
             process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
                                        stdout=log, stderr=subprocess.STDOUT,
                                        start_new_session=True, cwd=root)
@@ -193,37 +237,83 @@ def start_retest(config_path: Path) -> dict:
         return job
 
 
+@coordinated_start
 def approve_trial(config_path: Path) -> dict:
-    """Explicitly enable a stable-but-slower candidate after user consent."""
+    """Explicitly enable a stable-but-slower candidate after user consent.
+
+    Rejected while another task (filtering, a running worker, an uninstall
+    takeover) is active, and only the pending candidate's own still-valid
+    warning verdict can be approved — never one already replaced by a newer
+    attempt. A successful approval persists READY so the window completes
+    immediately and survives an app restart.
+    """
+    from .uninstall import uninstall_in_progress
+    if uninstall_in_progress(config_path.parent):
+        raise ValueError("MicForYou 正在卸载，不能启用该声音候选")
     root = bundle_root()
-    verdict = performance.read_verdict(config_path)
-    if verdict is None or verdict.get("verdict") != "latency_warning":
-        raise ValueError("当前没有等待确认的延迟警告候选")
-    candidate = read_pending_candidate(config_path)
-    if candidate is None:
-        raise ValueError("找不到延迟警告对应的声音候选")
-    verdict["approved_trial"] = True
-    performance.write_verdict(config_path, verdict)
-    folder = config_path.parent / "registrations" / candidate["token"]
-    config = ProductConfig(
-        input_device=candidate["input_device"], model_repo=root / "vendor",
-        model_dir=root / "models" / "tfmap_context_causal_100",
-        enrollment=folder / "enrollment.wav", onnx_model=folder / "core.onnx",
-        runtime_python=Path(sys.executable), project_root=root, bundle_managed=True,
-        frames_per_chunk=int(candidate.get("frames_per_chunk", 8)),
-        prefill_ms=float(candidate.get("prefill_ms", 100)))
-    save_config(config, config_path)
-    return {"status": "READY", "approved_trial": True,
+    from .cli import require_inactive
+    with state_lock(job_path(config_path)):
+        job = read_job(config_path)
+        if setup_status(config_path)["status"] == "RUNNING":
+            raise ValueError("声音设置正在进行，请等待完成或取消")
+        require_inactive(config_path)
+        pending = read_pending_candidate(config_path)
+        if pending is None:
+            raise ValueError("找不到等待确认的声音候选")
+        folder = config_path.parent / "registrations" / pending["token"]
+        verdict = performance.read_candidate_verdict(folder)
+        if verdict is None or verdict.get("verdict") != "latency_warning":
+            raise ValueError("当前没有等待确认的延迟警告候选")
+        if verdict.get("candidate_token") not in (None, pending["token"]):
+            raise ValueError("该候选已被新的检查替换，请重新检查性能")
+        if performance.validate_verdict(verdict) is not None:
+            raise ValueError("延迟警告结论不完整，请重新检查性能")
+        current = performance.identity(pending["input_device"], folder / "core.onnx",
+                                       folder / "enrollment.wav", root)
+        recorded = verdict.get("identity") or {}
+        if (current["onnx_sha256"] is None or current["enrollment_sha256"] is None
+                or recorded.get("onnx_sha256") != current["onnx_sha256"]
+                or recorded.get("enrollment_sha256") != current["enrollment_sha256"]
+                or recorded.get("input_device") != current["input_device"]
+                or recorded.get("app_version") != current["app_version"]
+                or recorded.get("app_build") != current["app_build"]):
+            raise ValueError("候选信息与结论不一致，请重新检查性能")
+        verdict["approved_trial"] = True
+        verdict["candidate_token"] = pending["token"]
+        config = ProductConfig(
+            input_device=pending["input_device"], model_repo=root / "vendor",
+            model_dir=root / "models" / "tfmap_context_causal_100",
+            enrollment=folder / "enrollment.wav", onnx_model=folder / "core.onnx",
+            runtime_python=Path(sys.executable), project_root=root, bundle_managed=True,
+            frames_per_chunk=int(verdict["frames_per_chunk"]),
+            prefill_ms=float(verdict["prefill_ms"]))
+        performance.write_candidate_verdict(folder, verdict)
+        performance.commit_candidate(config, config_path, verdict)
+        save_job(config_path, {
+            "status": "READY", "stage": "已按你的选择启用当前声音；语音输入可能较慢",
+            "progress": 1.0, "token": job.get("token"), "voice": "saved",
+            "performance": "latency_warning", "performance_reason": "high_latency",
+            "candidate_token": pending["token"], "approved_trial": True})
+    return {"status": "READY", "approved_trial": True, "token": job.get("token"),
             "frames_per_chunk": config.frames_per_chunk}
 
 
 def run_worker(config_path: Path, input_device: str, token: str,
                stage: str = "all") -> None:
+    """One registration/performance attempt.
+
+    Identity bookkeeping uses three distinct tokens: the worker token (this
+    attempt, also the job identity the UI binds to), the candidate token (the
+    saved voice folder a performance retest operates on), and per-attempt
+    report directories named by the worker token so retries never overwrite
+    earlier evidence.
+    """
     os.umask(0o077)
+    worker_token = token
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         job = read_job(config_path)
-        if job.get("token") == token:
+        if job.get("token") == worker_token:
             break
         time.sleep(0.05)
     else:
@@ -232,6 +322,8 @@ def run_worker(config_path: Path, input_device: str, token: str,
     committed = False
     voice_saved = False
     folder = None
+    candidate_token = None
+    terminal_written = False
 
     def interrupted(signum, frame):
         if not committed:
@@ -283,11 +375,25 @@ def run_worker(config_path: Path, input_device: str, token: str,
         from .cli import require_inactive
         with state_lock(config_path.parent / "setup-worker"):
             require_inactive(config_path)
-            attempt = {"attempt_id": token, "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            attempt = {"attempt_id": worker_token,
+                       "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                        "stage": stage, "candidates": []}
+            attempt_recorded = False
+
+            def finish_attempt(outcome, reason=None):
+                nonlocal attempt_recorded
+                if attempt_recorded:
+                    return
+                attempt_recorded = True
+                attempt["outcome"] = outcome
+                if reason:
+                    attempt["reason"] = reason
+                attempt["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                performance.record_attempt(config_path, attempt)
 
             if stage == "all":
-                folder = config_path.parent / "registrations" / token
+                candidate_token = worker_token
+                folder = config_path.parent / "registrations" / candidate_token
                 folder.mkdir(parents=True)
                 candidate = ProductConfig(
                     input_device=input_device, model_repo=root / "vendor",
@@ -337,14 +443,14 @@ def run_worker(config_path: Path, input_device: str, token: str,
                 voice_saved = True
                 previous_pending = read_pending_candidate(config_path)
                 (folder / "candidate.json").write_text(json.dumps({
-                    "token": token, "input_device": input_device,
+                    "token": candidate_token, "input_device": input_device,
                     "saved_at": attempt["started_at"],
                     "voice_saved": True}, ensure_ascii=False, indent=2) + "\n")
                 pending_candidate_path(config_path).write_text(json.dumps({
-                    "token": token, "input_device": input_device,
+                    "token": candidate_token, "input_device": input_device,
                     "frames_per_chunk": 8, "prefill_ms": 100.0,
                     "saved_at": attempt["started_at"]}, ensure_ascii=False, indent=2) + "\n")
-                if previous_pending and previous_pending.get("token") != token:
+                if previous_pending and previous_pending.get("token") != candidate_token:
                     old_folder = config_path.parent / "registrations" / previous_pending["token"]
                     active = config_path.parent / "config.json"
                     keep = False
@@ -360,10 +466,10 @@ def run_worker(config_path: Path, input_device: str, token: str,
                 pending = read_pending_candidate(config_path)
                 if pending is None:
                     raise ValueError("没有已保存的声音候选；请先完成一次注册")
-                folder = config_path.parent / "registrations" / pending["token"]
+                candidate_token = pending["token"]
+                folder = config_path.parent / "registrations" / candidate_token
                 if not (folder / "core.onnx").is_file():
                     raise ValueError("已保存的声音候选不完整，请重新注册")
-                token = pending["token"]
                 candidate = ProductConfig(
                     input_device=pending["input_device"], model_repo=root / "vendor",
                     model_dir=root / "models" / "tfmap_context_causal_100",
@@ -371,9 +477,13 @@ def run_worker(config_path: Path, input_device: str, token: str,
                     runtime_python=Path(sys.executable), project_root=root, bundle_managed=True)
                 voice_saved = True
                 input_device = pending["input_device"]
+                attempt["candidate_token"] = candidate_token
 
+            attempt["candidate_token"] = candidate_token
+            attempt_dir = folder / "attempts" / worker_token
+            attempt_dir.mkdir(parents=True, exist_ok=True)
             job["voice"] = "saved"
-            job["candidate_token"] = token
+            job["candidate_token"] = candidate_token
             stage_label("正在检查本机性能，请保持正常工作负载", 0.6,
                         phase="checking_performance")
             perf_common = ["--repo", str(candidate.model_repo), "--model-dir", str(candidate.model_dir),
@@ -385,22 +495,26 @@ def run_worker(config_path: Path, input_device: str, token: str,
                             "--onnx", str(candidate.onnx_model),
                             "--threads", "1", "--frames", "8", "16", "24",
                             "--audio-seconds", "10",
-                            "--result", str(folder / "benchmark.json")],
+                            "--result", str(attempt_dir / "benchmark.json")],
                            cwd=root, check=True)
             frames_choices = performance.eligible_frames(
-                json.loads((folder / "benchmark.json").read_text()))
+                json.loads((attempt_dir / "benchmark.json").read_text()))
             if not frames_choices:
-                performance.write_verdict(config_path, {
+                performance.write_candidate_verdict(folder, {
                     "verdict": "blocked", "reason": "insufficient_speed",
                     "approved_trial": False,
                     "identity": performance.identity(input_device, candidate.onnx_model,
-                                                     performance.app_version(root)),
-                    "attempt_id": token})
+                                                     candidate.enrollment, root),
+                    "candidate_token": candidate_token,
+                    "frames_per_chunk": 8, "prefill_ms": 100.0,
+                    "attempt_id": worker_token})
                 job["performance"] = "blocked"
                 job["performance_reason"] = "insufficient_speed"
+                finish_attempt("insufficient_speed", "insufficient_speed")
                 finish_terminal("FAILED",
                                 "声音已保存。当前设备或负载的处理速度不足，"
                                 "请接通电源、关闭高负载应用后重新检查性能")
+                terminal_written = True
                 raise ValueError("no eligible frames candidate; voice candidate kept")
 
             def run_latency(script, arguments):
@@ -414,7 +528,7 @@ def run_worker(config_path: Path, input_device: str, token: str,
                     stage_label(f"正在复核连续输出与延迟（候选 {index}/{len(frames_choices)}）",
                                 0.6 + 0.3 * (len(explored) + 1) / (len(frames_choices) * 3),
                                 phase="checking_performance")
-                    report = folder / f"latency-{frames}-{prefill}.json"
+                    report = attempt_dir / f"latency-{frames}-{prefill}.json"
                     run_latency("measure_bridge_latency.py",
                                 ["--backend", "onnx", "--onnx", str(candidate.onnx_model),
                                  "--onnx-threads", "1", "--frames-per-chunk", str(frames),
@@ -434,75 +548,99 @@ def run_worker(config_path: Path, input_device: str, token: str,
             if best is None:
                 best = performance.choose_best(explored)
 
-            attempt["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-            performance.record_attempt(config_path, attempt)
-
             if best is None:
-                performance.write_verdict(config_path, {
-                    "verdict": "blocked", "reason": (explored[-1]["reason"] if explored
-                                                     else "no_stable_candidate"),
+                blocked_reason = explored[-1]["reason"] if explored else "no_stable_candidate"
+                performance.write_candidate_verdict(folder, {
+                    "verdict": "blocked", "reason": blocked_reason,
                     "approved_trial": False,
                     "identity": performance.identity(input_device, candidate.onnx_model,
-                                                     performance.app_version(root)),
-                    "attempt_id": token})
+                                                     candidate.enrollment, root),
+                    "candidate_token": candidate_token,
+                    "frames_per_chunk": 8, "prefill_ms": 100.0,
+                    "attempt_id": worker_token})
                 job["performance"] = "blocked"
-                job["performance_reason"] = explored[-1]["reason"] if explored else "no_stable_candidate"
+                job["performance_reason"] = blocked_reason
+                finish_attempt("blocked", blocked_reason)
                 finish_terminal("FAILED",
                                 "声音已保存。当前声音处理不稳定或速度不足，"
                                 "请关闭高负载应用后重新检查性能")
+                terminal_written = True
                 raise ValueError("performance checks failed; voice candidate kept")
 
             candidate = replace(candidate, frames_per_chunk=best["frames_per_chunk"],
                                 prefill_ms=best["prefill_ms"])
             pending = read_pending_candidate(config_path) or {}
-            pending.update({"token": token, "input_device": input_device,
+            pending.update({"token": candidate_token, "input_device": input_device,
                             "frames_per_chunk": best["frames_per_chunk"],
                             "prefill_ms": best["prefill_ms"]})
             pending_candidate_path(config_path).write_text(
                 json.dumps(pending, ensure_ascii=False, indent=2) + "\n")
-            performance.write_verdict(config_path, {
+            # The candidate's own verdict lives in its folder; the active
+            # verdict next to config.json is published only by a commit.
+            verdict_payload = {
                 "verdict": best["verdict"], "reason": best["reason"],
                 "approved_trial": False,
                 "frames_per_chunk": best["frames_per_chunk"],
                 "prefill_ms": best["prefill_ms"],
                 "identity": performance.identity(input_device, candidate.onnx_model,
-                                                 performance.app_version(root)),
-                "attempt_id": token,
-                "latency_ms_p95": best["metrics"].get("latency_ms_p95")})
+                                                 candidate.enrollment, root),
+                "candidate_token": candidate_token,
+                "attempt_id": worker_token,
+                "latency_ms_p95": best["metrics"].get("latency_ms_p95")}
+            performance.write_candidate_verdict(folder, verdict_payload)
 
             if best["verdict"] == "pass":
                 # Atomic switch: only a passing (or explicitly approved)
                 # candidate ever replaces the active registration.
                 previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
                 try:
-                    save_config(candidate, config_path)
+                    performance.commit_candidate(candidate, config_path, verdict_payload)
                     committed = True
                     job["performance"] = "pass"
+                    finish_attempt("ready")
                     finish_terminal("READY",
                                     "设置完成。在豆包输入法中选择 BlackHole 2ch，然后开始过滤")
                 finally:
                     signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
             else:
                 job["performance"] = "latency_warning"
+                finish_attempt("waiting_trial", "high_latency")
                 finish_terminal("WAITING",
                                 "声音已保存。语音输入可能需要等一会儿才出字，"
                                 "你可以先试用，也可以重新检查")
+            performance.prune_attempt_folders(folder)
     except (InterruptedError, KeyboardInterrupt):
         if job.get("performance") not in {"pass", "latency_warning"}:
             job["performance"] = job.get("performance") or "unchecked"
+        try:
+            finish_attempt("cancelled")
+        except UnboundLocalError:
+            pass
         finish_terminal("CANCELLED", "已取消；" +
                         ("已保存的声音不受影响" if voice_saved else "已有注册保持不变"))
     except EnrollmentQualityError as error:
+        try:
+            finish_attempt("quality_failed", error.reason)
+        except UnboundLocalError:
+            pass
         finish_terminal("FAILED", error.message, reason=error.reason)
         raise
     except Exception as error:
         job["performance"] = job.get("performance") or "unchecked"
-        message = str(error)
-        if voice_saved and "性能" not in message:
-            message = f"声音已保存；{message}"
-        finish_terminal("FAILED", message)
+        if not terminal_written:
+            message = str(error)
+            if voice_saved and "性能" not in message:
+                message = f"声音已保存；{message}"
+            finish_terminal("FAILED", message)
+        try:
+            finish_attempt("error", str(error)[:200])
+        except UnboundLocalError:
+            pass
         raise
     finally:
+        # Bounded evidence retention applies to every attempt, kept or not.
+        if folder is not None and folder.exists():
+            performance.prune_attempt_folders(folder)
         # A voice that reached the saved point is never deleted on failure;
         # only candidates that failed before saving (recording/model issues)
         # are cleaned up.

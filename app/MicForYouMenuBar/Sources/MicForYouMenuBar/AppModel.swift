@@ -3,10 +3,16 @@ import Foundation
 import AVFoundation
 import SwiftUI
 
+enum DevicesPhase: Equatable {
+    case unknown, loading, loaded, failed
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var status: ProductStatus?
     @Published var devices: [AudioDevice] = []
+    @Published var devicesPhase: DevicesPhase = .unknown
+    @Published var devicesError: String?
     @Published var selectedInput = ""
     @Published var busy = false
     @Published var errorMessage: String?
@@ -35,13 +41,85 @@ final class AppModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+        if CommandLine.arguments.contains("--open-settings") {
+            // Measurement hook: open Settings right after launch so window
+            // first-frame timing can be taken reproducibly.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                UITiming.event("settings.openRequested", ["source": "launchFlag"])
+                self?.openSettings()
+            }
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--settings-cycles"),
+           index + 1 < CommandLine.arguments.count,
+           let count = Int(CommandLine.arguments[index + 1]), count > 0 {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1.0))
+                for cycle in 1...count {
+                    UITiming.event("settings.cycleOpen", ["cycle": String(cycle)])
+                    self?.openSettings()
+                    // Leave room for parallel data loads before closing.
+                    try? await Task.sleep(for: .seconds(3.5))
+                    UITiming.event("settings.cycleClose", [:])
+                    self?.closeSettings()
+                    try? await Task.sleep(for: .seconds(0.6))
+                }
+                UITiming.event("settings.cyclesDone")
+            }
+        }
+    }
+
+    // MARK: - Settings window
+
+    /// Centrally managed settings window (replaces the SwiftUI Settings
+    /// scene, whose programmatic activation is unreliable in a menu-bar-only
+    /// app and whose first-frame behavior we could not measure).
+    private var settingsWindow: NSWindow?
+    private var settingsWindowObservers: [NSObjectProtocol] = []
+
+    func openSettings() {
+        UITiming.event("settings.openRequested", ["source": "user"])
+        if let window = settingsWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 610),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false)
+        window.title = "MicForYou 设置"
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.contentView = NSHostingView(rootView: SettingsView(model: self))
+        settingsWindow = window
+        // Window-server callbacks double as interaction-ready timing marks:
+        // key window accepts input, occlusion-visible means it is composited.
+        // (Block-based observers are removed when their token deallocates, so
+        // the tokens must live as long as the window.)
+        let center = NotificationCenter.default
+        settingsWindowObservers.append(
+            center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window,
+                               queue: .main) { _ in UITiming.event("settings.becameKey") })
+        settingsWindowObservers.append(
+            center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                               object: window, queue: .main) { note in
+                if let changed = note.object as? NSWindow,
+                   changed.occlusionState.contains(.visible) {
+                    UITiming.event("settings.occlusionVisible")
+                }
+            })
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func closeSettings() {
+        settingsWindow?.orderOut(nil)
     }
 
     @Published var statusLoading = false
-    @Published var devicesLoading = false
     private var statusInFlight = false
     private var setupInFlight = false
-    private var devicesInFlight2 = false
+    private var devicesInFlight = false
 
     /// Parallel read-only refresh: status and setup status never wait on each
     /// other, and concurrent callers share one flight instead of stacking
@@ -67,53 +145,41 @@ final class AppModel: ObservableObject {
         defer { statusInFlight = false }
         statusLoading = true
         defer { statusLoading = false }
-        return try? await withReadTimeout {
-            try await client.run(["status"], as: ProductStatus.self)
-        }
+        let value = try? await client.run(["status"], as: ProductStatus.self, timeout: 5)
+        if value != nil { UITiming.event("settings.statusLoaded") }
+        return value
     }
 
     private func loadSetupIfFree(_ client: CLIClient) async -> SetupJob? {
         guard !setupInFlight else { return nil }
         setupInFlight = true
         defer { setupInFlight = false }
-        return try? await withReadTimeout {
-            try await client.run(["setup-status"], as: SetupJob.self)
-        }
+        let job = try? await client.run(["setup-status"], as: SetupJob.self, timeout: 5)
+        if job != nil { UITiming.event("settings.setupLoaded") }
+        return job
     }
 
-    /// Read-only queries time out instead of hanging the UI refresh; real
-    /// long-running operations (registration, uninstall) never use this path.
-    private func withReadTimeout<T: Sendable>(
-        _ body: @escaping @Sendable () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { try await body() }
-            group.addTask {
-                try await Task.sleep(for: .seconds(5))
-                throw URLError(.timedOut)
-            }
-            guard let first = try await group.next() else {
-                throw URLError(.timedOut)
-            }
-            group.cancelAll()
-            return first
-        }
-    }
-
+    /// Devices have a distinct phase so the UI can tell "still reading" from
+    /// "loaded and empty" from "failed" — never showing a fake fault while a
+    /// bounded query is still in flight.
     func refreshDevices() async {
-        guard let client, !uninstallBusy, !devicesInFlight2 else { return }
-        devicesInFlight2 = true
-        defer { devicesInFlight2 = false }
-        devicesLoading = true
-        defer { devicesLoading = false }
+        guard let client, !uninstallBusy, !devicesInFlight else { return }
+        devicesInFlight = true
+        defer { devicesInFlight = false }
+        devicesPhase = .loading
+        devicesError = nil
         do {
-            let values = try await client.run(["devices"], as: [AudioDevice].self)
+            let values = try await client.run(["devices"], as: [AudioDevice].self, timeout: 5)
             driverInstalled = values.contains { $0.name == "BlackHole 2ch" }
             devices = values.filter {
                 $0.maxInputChannels > 0 && !$0.name.localizedCaseInsensitiveContains("BlackHole")
             }
             if selectedInput.isEmpty { selectedInput = devices.first?.name ?? "" }
+            devicesPhase = .loaded
+            UITiming.event("settings.devicesLoaded")
         } catch {
-            errorMessage = error.localizedDescription
+            devicesPhase = .failed
+            devicesError = error.localizedDescription
         }
     }
 
@@ -169,7 +235,8 @@ final class AppModel: ObservableObject {
     /// 3-second countdown needs sub-second updates from real backend timing.
     func refreshSetup() async {
         guard let client, client.isBundled, !uninstallBusy else { return }
-        if let job = try? await client.run(["setup-status"], as: SetupJob.self) {
+        if let job = try? await client.run(["setup-status"], as: SetupJob.self,
+                                           timeout: 5) {
             setupJob = job
         }
     }
@@ -189,12 +256,13 @@ final class AppModel: ObservableObject {
     }
 
     func approveTrial() async {
-        guard let client, !uninstallBusy else { return }
+        guard let client, !isWorking, !uninstallBusy else { return }
         busy = true
         defer { busy = false }
         do {
             _ = try await client.run(["setup-approve"])
-            if let job = try? await client.run(["setup-status"], as: SetupJob.self) {
+            if let job = try? await client.run(["setup-status"], as: SetupJob.self,
+                                               timeout: 5) {
                 setupJob = job
             }
             errorMessage = nil
@@ -247,7 +315,8 @@ final class AppModel: ObservableObject {
         if uninstallKeepData { arguments.append("--keep-data") }
         if uninstallRemoveDriver { arguments.append("--remove-driver") }
         do {
-            uninstallPlan = try await client.run(arguments, as: UninstallInventory.self)
+            uninstallPlan = try await client.run(arguments, as: UninstallInventory.self,
+                                                 timeout: 5)
             uninstallError = nil
         } catch {
             uninstallError = error.localizedDescription

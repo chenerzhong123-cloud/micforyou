@@ -4,6 +4,7 @@ enum CLIError: LocalizedError {
     case configMissing
     case executableMissing(String)
     case commandFailed(Int32, String)
+    case readTimeout(String)
     case invalidOutput(String)
 
     var errorDescription: String? {
@@ -14,6 +15,10 @@ enum CLIError: LocalizedError {
             "找不到控制程序：\(path)。请在项目目录运行 uv sync。"
         case let .commandFailed(code, message):
             "命令失败（\(code)）：\(message)"
+        case let .readTimeout(detail):
+            detail.isEmpty
+                ? "控制程序查询超时，已停止该查询；请稍后重试。"
+                : "控制程序查询超时，已停止该查询：\(detail)"
         case let .invalidOutput(message):
             "无法读取控制程序输出：\(message)"
         }
@@ -65,9 +70,10 @@ struct CLIClient: Sendable {
 
     func run<T: Decodable & Sendable>(
         _ arguments: [String],
-        as type: T.Type
+        as type: T.Type,
+        timeout: TimeInterval? = nil
     ) async throws -> T {
-        let data = try await run(arguments)
+        let data = try await run(arguments, timeout: timeout)
         do {
             return try JSONDecoder().decode(type, from: data)
         } catch {
@@ -76,7 +82,12 @@ struct CLIClient: Sendable {
         }
     }
 
-    func run(_ arguments: [String]) async throws -> Data {
+    /// Runs the CLI. `timeout` bounds the whole process lifetime: on expiry
+    /// the child is terminated and reaped before the error is thrown, so a
+    /// hung read-only query can never leave the UI waiting past the deadline.
+    /// It is only ever passed for read-only queries — never for workers,
+    /// audio operations, or the uninstall takeover.
+    func run(_ arguments: [String], timeout: TimeInterval? = nil) async throws -> Data {
         try await Task.detached(priority: .userInitiated) {
             let process = Process()
             let outputURL = FileManager.default.temporaryDirectory
@@ -103,7 +114,19 @@ struct CLIClient: Sendable {
             process.standardOutput = output
             process.standardError = output
             try process.run()
-            process.waitUntilExit()
+            if let timeout {
+                if !Self.awaitExit(of: process, timeout: timeout) {
+                    process.terminate()
+                    _ = Self.awaitExit(of: process, timeout: 3)
+                    output.synchronizeFile()
+                    let partial = (try? Data(contentsOf: outputURL)) ?? Data()
+                    let detail = String(decoding: partial.suffix(400), as: UTF8.self)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    throw CLIError.readTimeout(detail)
+                }
+            } else {
+                process.waitUntilExit()
+            }
             try output.synchronize()
             let rendered = try Data(contentsOf: outputURL)
             guard process.terminationStatus == 0 else {
@@ -112,5 +135,17 @@ struct CLIClient: Sendable {
             }
             return rendered
         }.value
+    }
+
+    /// Waits for process exit with a deadline. `waitUntilExit` itself is not
+    /// cancellable, so the wait happens on a helper queue and only the wait
+    /// is bounded; an exited process always satisfies later waits too.
+    private static func awaitExit(of process: Process, timeout: TimeInterval) -> Bool {
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue(label: "micforyou.cli.exit", qos: .userInitiated).async {
+            process.waitUntilExit()
+            semaphore.signal()
+        }
+        return semaphore.wait(timeout: .now() + timeout) == .success
     }
 }

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 from typing import Any
 
 from .audio import (
@@ -421,10 +422,14 @@ def start_background(config: ProductConfig, args: argparse.Namespace) -> dict:
                                  args.config)
     if decision == "deny":
         messages = {
-            "unchecked": "本机性能尚未检查；请在设置中完成或重新检查性能",
+            "unchecked": "本机性能尚未检查；请在设置中完成或重新检查性能（无需重新朗读）",
+            "invalid_verdict": "性能结论不可用，请重新检查性能后开始（无需重新朗读）",
             "device_changed": "麦克风已更换，请重新检查性能后开始",
             "model_changed": "声音模型已更换，请重新检查性能后开始",
-            "version_changed": "应用已更新，请重新检查性能后开始",
+            "model_missing": "声音模型文件缺失，请重新检查性能或重新注册",
+            "enrollment_changed": "注册录音已变化，请重新检查性能后开始",
+            "params_changed": "运行参数已调整，请重新检查性能后开始",
+            "version_changed": "应用已更新，请重新检查性能后开始（无需重新朗读）",
         }
         raise ValueError(messages.get(reason, f"性能检查未通过（{reason}），"
                                              "请重新检查后再开始"))
@@ -843,6 +848,11 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     try:
+        # Debug-only slow-query injection for UI responsiveness measurement;
+        # read-only commands only, and only when the harness sets the env var.
+        delay_ms = os.environ.get("MICFORYOU_DEBUG_QUERY_DELAY_MS")
+        if delay_ms and args.command in {"devices", "status", "setup-status"}:
+            time.sleep(float(delay_ms) / 1000.0)
         args.func(args)
     except (ValueError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"error: {error}", file=sys.stderr)

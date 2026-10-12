@@ -7,10 +7,6 @@ struct MenuContentView: View {
         model.status?.runtime.effectiveStatus ?? "UNKNOWN"
     }
 
-    private var appearance: StatusAppearance {
-        StatusAppearance.forStatus(runtimeStatus)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
@@ -42,6 +38,10 @@ struct MenuContentView: View {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
+    }
+
+    private var appearance: StatusAppearance {
+        StatusAppearance.forStatus(runtimeStatus)
     }
 
     private var header: some View {
@@ -135,7 +135,9 @@ struct MenuContentView: View {
                 prominent: true
             )
         } else {
-            SettingsLink {
+            Button {
+                model.openSettings()
+            } label: {
                 Label("打开设置", systemImage: "gearshape")
                     .frame(maxWidth: .infinity)
             }
@@ -176,10 +178,8 @@ struct MenuContentView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            SettingsLink {
-                Label("设置", systemImage: "gearshape")
-            }
-            .keyboardShortcut(",")
+            Button("设置") { model.openSettings() }
+                .keyboardShortcut(",")
 
             if model.status?.runtime.logPath != nil {
                 Button("日志") { model.openLog() }
@@ -197,6 +197,11 @@ struct MenuContentView: View {
     private var importantMessage: (text: String, icon: String, color: Color)? {
         switch runtimeStatus {
         case "RUNNING":
+            // From the active registration's own verdict — never a pending
+            // candidate's result.
+            if model.status?.performance?.verdict == "latency_warning" {
+                return ("正在过滤；语音输入可能较慢（已按你的选择启用）", "hourglass", .secondary)
+            }
             return ("豆包输入保持为 BlackHole 2ch", "checkmark.circle", .secondary)
         case "RECOVERING":
             return ("正在重建音频链路；恢复前不会输出声音", "shield.lefthalf.filled", .orange)

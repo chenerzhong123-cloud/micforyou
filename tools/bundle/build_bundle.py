@@ -123,7 +123,9 @@ def main():
         installers = args.app / "Contents/Resources/Installers"
         installers.mkdir()
         shutil.copy2(args.blackhole_pkg, installers / f"BlackHole2ch-{BLACKHOLE_VERSION}.pkg")
-    version = plistlib.loads((args.app / "Contents/Info.plist").read_bytes())["CFBundleShortVersionString"]
+    plist = plistlib.loads((args.app / "Contents/Info.plist").read_bytes())
+    version = plist["CFBundleShortVersionString"]
+    build = str(plist["CFBundleVersion"])
     python = root / "python/bin/python3.12"
     metadata_code = """import importlib.metadata as m,json
 print(json.dumps([{'name':d.metadata['Name'],'version':d.version,
@@ -132,7 +134,8 @@ print(json.dumps([{'name':d.metadata['Name'],'version':d.version,
  'license_files':[str(f) for f in d.files or [] if 'license' in str(f).lower() or 'notice' in str(f).lower()]}
  for d in m.distributions()],indent=2))"""
     manifest = {
-        "schema": "micforyou/bundle/1", "version": version, "architecture": "arm64",
+        "schema": "micforyou/bundle/1", "version": version, "build": build,
+        "architecture": "arm64",
         "project_license": "Apache-2.0",
         "real_tse_commit": SOURCE_COMMIT, "wespeaker_commit": WESPEAKER_COMMIT,
         "model_sha256": WEIGHTS_HASH,

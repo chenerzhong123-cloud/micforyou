@@ -77,8 +77,14 @@ struct EnrollmentStateCheck {
                                     attemptToken: nil), .failed,
                "failed without saved voice -> recording retry")
         expect(EnrollmentFlow.state(job: saved("CANCELLED", performance: nil),
+                                    attemptToken: "w"), .cancelledSaved,
+               "cancelled saved voice -> retest entry, not preview")
+        expect(EnrollmentFlow.state(job: saved("CANCELLED", performance: "blocked"),
+                                    attemptToken: "w"), .cancelledSaved,
+               "cancelled after blocked check -> retest entry")
+        expect(EnrollmentFlow.state(job: job("CANCELLED", token: "w"),
                                     attemptToken: "w"), .idle,
-               "cancelled saved voice -> preview")
+               "cancelled before saving -> preview")
 
 
         print("MicForYou enrollment state check PASS")

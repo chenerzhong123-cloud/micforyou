@@ -175,7 +175,7 @@ def test_setup_transaction_preserves_previous_registration_until_all_checks_pass
         elif name == "compare_torch_onnx.py":
             (folder / "correctness.json").write_text(json.dumps({"gate": {"verdict": "PASS"}}))
         elif name == "benchmark_onnx_tse.py":
-            (folder / "benchmark.json").write_text(json.dumps(
+            Path(command[command.index("--result") + 1]).write_text(json.dumps(
                 benchmark(processing_rtf=1.1 if failure == "performance" else 0.5)))
         elif name == "measure_bridge_latency.py":
             prefill = int(command[command.index("--prefill-ms") + 1])
@@ -213,8 +213,12 @@ def test_setup_transaction_preserves_previous_registration_until_all_checks_pass
             assert (candidate_dir / "enrollment.wav").exists()
             assert job.get("voice") == "saved"
             from micforyou import performance
-            verdict = performance.read_verdict(config_path)
+            # The blocked verdict belongs to the pending candidate only; the
+            # active registration's authorization is never overridden.
+            verdict = performance.read_candidate_verdict(candidate_dir)
             assert verdict is not None and verdict["verdict"] == "blocked"
+            assert verdict["candidate_token"] == token
+            assert performance.read_verdict(config_path) is None
             assert setup.read_pending_candidate(config_path)["token"] == token
     else:
         updated = load_config(config_path)

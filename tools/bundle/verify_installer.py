@@ -44,7 +44,14 @@ def main():
     assert sha256(raw / 'MicForYou.pkg/Scripts/preinstall') == sha256(PROJECT / 'tools/installer/scripts/preinstall')
     app = full / 'MicForYou.pkg/Payload/MicForYou.app'
     runtime = app / 'Contents/Resources/Runtime'
-    assert plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString'] == manifest['version']
+    info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+    assert info['CFBundleShortVersionString'] == manifest['version']
+    # The bundle manifest must record the same build identity the performance
+    # verdicts bind to; a missing build field would silently stop verdict
+    # invalidation between builds of the same version.
+    bundle_manifest = json.loads((runtime / 'bundle-manifest.json').read_text())
+    assert bundle_manifest['build'] == str(info['CFBundleVersion']), \
+        'bundle-manifest build identity missing or mismatched'
     assert sha256(runtime / 'models/tfmap_context_causal_100/avg_model.pt') == WEIGHTS_HASH
     repair = app / 'Contents/Resources/Installers/BlackHole2ch-0.7.1.pkg'
     assert sha256(repair) == BLACKHOLE_HASH
@@ -81,6 +88,7 @@ def main():
     report = dict(manifest, result='PASS',
                   checks=['product checksum', 'official component byte identity', 'fixed /Applications install',
                           'nonrelocatable App', 'preinstall script identity', 'model checkpoint hash',
+                          'bundle build identity recorded and consistent',
                           'offline repair pkg hash/signature/notarization', 'App and driver signatures',
                           'no external symlinks or personal model/audio/cache files',
                           'Installer read-only choices query', 'C01 icon', 'Swift bundled CLI first-use status',

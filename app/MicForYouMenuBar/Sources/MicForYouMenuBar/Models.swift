@@ -59,6 +59,19 @@ struct RuntimeStatus: Codable, Equatable {
     }
 }
 
+struct PerformanceStatus: Codable, Equatable {
+    let verdict: String?
+    let reason: String?
+    let approvedTrial: Bool?
+    let framesPerChunk: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case verdict, reason
+        case approvedTrial = "approved_trial"
+        case framesPerChunk = "frames_per_chunk"
+    }
+}
+
 struct ProductStatus: Codable, Equatable {
     let ready: Bool
     let inputDevice: String
@@ -67,9 +80,10 @@ struct ProductStatus: Codable, Equatable {
     let deviceErrors: [String]
     let runtime: RuntimeStatus
     let qualityNotice: String
+    let performance: PerformanceStatus?
 
     enum CodingKeys: String, CodingKey {
-        case ready, runtime
+        case ready, runtime, performance
         case inputDevice = "input_device"
         case outputDevice = "output_device"
         case faultPolicy = "fault_policy"
@@ -184,6 +198,9 @@ enum EnrollmentFlow {
         // user: stable-but-slower (explicit trial) or blocked (retest).
         case waitingTrial
         case performanceBlocked
+        // The attempt was cancelled after the voice was saved; the retest
+        // path stays available without reading the passage aloud again.
+        case cancelledSaved
     }
 
     static func state(job: SetupJob?, attemptToken: String?) -> State {
@@ -207,6 +224,9 @@ enum EnrollmentFlow {
                 return .performanceBlocked
             }
             return .failed
+        case "CANCELLED":
+            if job.voice == "saved" { return .cancelledSaved }
+            return .idle
         default:
             return .idle
         }

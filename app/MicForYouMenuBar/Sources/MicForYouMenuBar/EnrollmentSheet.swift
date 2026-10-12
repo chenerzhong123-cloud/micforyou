@@ -128,11 +128,16 @@ struct EnrollmentSheet: View {
                     .foregroundStyle(.green)
                 Text("语音输入可能需要等一会儿才出字（本机当前负载下延迟偏高）。你可以先试用，也可以重新检查。")
                     .fixedSize(horizontal: false, vertical: true)
+                if model.status?.ready == true {
+                    Text("新声音尚未启用；原有注册不受影响，可继续使用。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 HStack {
                     Button("重新检查性能") { Task { await model.startRetest() } }
                         .disabled(model.isWorking)
                     Button("仍然试用") { Task { await model.approveTrial() } }
                         .keyboardShortcut(.defaultAction)
+                        .disabled(model.isWorking)
                     Button("查看设置步骤…") { model.openDoubaoGuide() }
                 }
 
@@ -143,8 +148,27 @@ struct EnrollmentSheet: View {
                     .foregroundStyle(.orange)
                 Text(blockedMessage)
                     .fixedSize(horizontal: false, vertical: true)
+                if model.status?.ready == true {
+                    Text("新声音尚未启用；原有注册不受影响，可继续使用。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 HStack {
                     Button("重新检查性能") { Task { await model.startRetest() } }
+                        .disabled(model.isWorking)
+                    Button("重新录音") { Task { await model.enrollVoice() } }
+                        .disabled(model.isWorking)
+                    Button("完成") { dismiss() }
+                }
+
+            case .cancelledSaved:
+                Label("已取消；你的声音已保存", systemImage: "checkmark.circle")
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(.green)
+                Text("本机性能检查尚未完成。无需重新朗读，随时可以重新检查；也可以换一支麦克风重新注册。")
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("重新检查性能") { Task { await model.startRetest() } }
+                        .keyboardShortcut(.defaultAction)
                         .disabled(model.isWorking)
                     Button("重新录音") { Task { await model.enrollVoice() } }
                         .disabled(model.isWorking)
