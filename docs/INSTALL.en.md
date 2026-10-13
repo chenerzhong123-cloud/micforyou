@@ -4,7 +4,7 @@
 
 The complete installer (`.pkg`) bundles the menu-bar app, an arm64 Python runtime, inference dependencies, the general REAL-TSE weights, and the officially licensed BlackHole 2ch 0.7.1 driver. No Python, uv, Git, audio driver, or manual model download is required.
 
-**Trial version 0.2.2.** [Download the installer](https://github.com/chenerzhong123-cloud/micforyou/releases/download/v0.2.2-trial/MicForYou-0.2.2-trial-macos-arm64.pkg). The installer is not Developer ID signed or notarized; the app is ad-hoc signed. If macOS blocks it, follow the installation steps below.
+**Trial version 0.2.3.** [Download the installer](https://github.com/chenerzhong123-cloud/micforyou/releases/download/v0.2.3-trial/MicForYou-0.2.3-trial-macos-arm64.pkg). The installer is not Developer ID signed or notarized; the app is ad-hoc signed. If macOS blocks it, follow the installation steps below.
 
 ## Recommended hardware
 
@@ -16,8 +16,13 @@ The complete installer (`.pkg`) bundles the menu-bar app, an arm64 Python runtim
 
 ## Download and install
 
-1. Download the `.pkg` and `.sha256` from Assets on the [trial release page](https://github.com/chenerzhong123-cloud/micforyou/releases/tag/v0.2.2-trial). Do not treat `Source code (zip)` as an installer.
-   Verify integrity in your download directory with `shasum -a 256 -c <installer-file-name>.sha256`.
+1. Download `MicForYou-0.2.3-trial-macos-arm64.pkg` from Assets on the [trial release page](https://github.com/chenerzhong123-cloud/micforyou/releases/tag/v0.2.3-trial). Do not treat `Source code (zip)` as an installer.
+   To check download integrity, also download the matching `.sha256` file and place it in the same directory as the installer. Run the command below; `OK` means the files match. This check is optional.
+
+   ```bash
+   shasum -a 256 -c MicForYou-0.2.3-trial-macos-arm64.sha256
+   ```
+
 2. Before installing, choose "结束" (End) in the old app, cancel any running registration, and quit the app. Double-click the `.pkg` and enter your administrator password when prompted. The app installs to `/Applications/MicForYou.app` and the audio driver to `/Library/Audio/Plug-Ins/HAL`. The installer deletes no personal data and never launches the app.
 3. Restart your Mac if prompted after a first-time or upgraded driver install; an equal or newer driver version is skipped automatically. If an old copy remains in `~/Applications`, launch the new version from `/Applications`.
 4. The combined installer is not Developer ID signed or notarized, and the original BlackHole package's signing does not cover the combined package. If macOS blocks it, follow [Apple's instructions](https://support.apple.com/en-us/102445) and choose "Open Anyway" only for packages from a confirmed source.

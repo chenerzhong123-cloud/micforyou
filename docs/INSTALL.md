@@ -4,7 +4,7 @@
 
 完整安装包（`.pkg`）内置菜单栏 App、arm64 Python 运行环境、推理依赖、通用 REAL-TSE 权重和经集成授权的官方 BlackHole 2ch 0.7.1 驱动，无需另装 Python、uv、Git、音频驱动或手动下载模型。
 
-**试用版本 0.2.2。** [下载安装包](https://github.com/chenerzhong123-cloud/micforyou/releases/download/v0.2.2-trial/MicForYou-0.2.2-trial-macos-arm64.pkg)。安装包尚未完成 Developer ID 签名与 Apple 公证，App 为 ad-hoc 签名；若 macOS 拦截，请按下方安装步骤处理。
+**试用版本 0.2.3。** [下载安装包](https://github.com/chenerzhong123-cloud/micforyou/releases/download/v0.2.3-trial/MicForYou-0.2.3-trial-macos-arm64.pkg)。安装包尚未完成 Developer ID 签名与 Apple 公证，App 为 ad-hoc 签名；若 macOS 拦截，请按下方安装步骤处理。
 
 ## 推荐设备
 
@@ -16,8 +16,13 @@
 
 ## 下载与安装
 
-1. 在 [试用版本下载页面](https://github.com/chenerzhong123-cloud/micforyou/releases/tag/v0.2.2-trial) 的 Assets 下载 `.pkg` 与 `.sha256`。不要把 `Source code (zip)` 当作安装包。
-   在下载目录运行 `shasum -a 256 -c <安装包文件名>.sha256` 核对完整性。
+1. 在 [试用版本下载页面](https://github.com/chenerzhong123-cloud/micforyou/releases/tag/v0.2.3-trial) 的 Assets 下载 `MicForYou-0.2.3-trial-macos-arm64.pkg`。不要把 `Source code (zip)` 当作安装包。
+   如需核对下载完整性，可另下载同名 `.sha256` 文件，与安装包放在同一目录后运行下面的命令；显示 `OK` 表示校验一致。校验是可选步骤。
+
+   ```bash
+   shasum -a 256 -c MicForYou-0.2.3-trial-macos-arm64.sha256
+   ```
+
 2. 安装前先在旧版中点击“结束”、取消正在进行的注册并退出 App。双击 `.pkg`，按系统提示输入管理员密码。App 固定安装到 `/Applications/MicForYou.app`，音频驱动安装到 `/Library/Audio/Plug-Ins/HAL`。安装器不删除个人数据，也不会自动启动 App。
 3. 首次安装或升级驱动后按提示重启 Mac；已有同版或更高版驱动时自动跳过该组件。若 `~/Applications` 仍有旧版副本，请启动 `/Applications` 中的新版本。
 4. 组合安装包未做 Developer ID 签名／公证，BlackHole 原始包的签名公证不覆盖组合包。若系统拦截，按 [Apple 官方说明](https://support.apple.com/en-us/102445) 仅对确认来源的包选择“仍要打开”。
